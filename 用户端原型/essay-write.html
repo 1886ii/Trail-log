@@ -1,0 +1,707 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="light">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#F5F6F8">
+<title>写作文 · 学迹</title>
+<script>document.documentElement.classList.add('js-on');</script>
+<link rel="stylesheet" href="style.css?v=20261021a">
+</head>
+<body data-page="essayWrite">
+
+<div class="app">
+<main class="main">
+
+  <header class="topbar" id="topbar"></header>
+
+  <div class="content content-narrow">
+
+    <!-- 返回 -->
+    <section class="section reveal" style="margin-top:16px">
+      <a class="btn-ghost" href="essay.html" style="display:inline-flex;align-items:center;gap:6px">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"
+             stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M14.5 5.5 8 12l6.5 6.5"/>
+        </svg>
+        返回作文列表
+      </a>
+    </section>
+
+    <!-- 任务信息 -->
+    <section class="section reveal">
+      <div class="side-card" style="padding:18px 20px">
+        <div class="task-top">
+          <h2 style="font-size:18px;font-weight:500;margin:0" id="t-title">—</h2>
+          <span class="chip brand">管理端发布</span>
+          <span class="chip" id="t-subject">—</span>
+          <span class="chip" id="t-genre">—</span>
+        </div>
+        <!-- 题目原文 -->
+        <div class="task-prompt" id="t-prompt"></div>
+        <!-- 题目要求 -->
+        <div class="task-req" id="t-req"></div>
+        <!-- 截止时间 -->
+        <div class="due-bar" id="t-due" data-state="open"></div>
+        <div id="t-steps"></div>
+      </div>
+    </section>
+
+    <!-- ========== 状态一：写作 ========== -->
+    <section class="section reveal" id="view-write">
+
+      <!-- 方式切换 -->
+      <h2 class="section-title">开始写作 <span class="count">· 可以在线写，也可以写完拍照上传</span></h2>
+      <div class="flt-row" id="mode-tabs">
+        <button class="flt on" type="button" data-mode="online">在线写作</button>
+        <button class="flt" type="button" data-mode="photo">上传手写稿</button>
+      </div>
+
+      <!-- 写作引导（仅在线写作时显示） -->
+      <div class="panel" style="margin-bottom:14px" id="guide-panel">
+        <p class="row-title" style="margin-bottom:12px">写作引导 · 想清楚再动笔</p>
+        <ul class="guide-list" id="guide-list"></ul>
+      </div>
+
+      <!-- 在线写作 -->
+      <div id="pane-online">
+        <div class="write-box">
+          <div class="write-head">
+            <span>正文</span>
+            <span style="color:var(--text-3)">·</span>
+            <span id="draft-hint">草稿会自动保存在本机</span>
+          </div>
+          <textarea class="write-body" id="essay-input" spellcheck="false"
+            placeholder="从最容易写的那一段开始…&#10;&#10;写不下去的时候，先停 1 分钟，回忆一个具体的画面：当时的天色、声音、你说过的一句话。"></textarea>
+          <div class="write-foot">
+            <span class="write-count" id="word-count">已写 0</span>
+            <span class="spacer"></span>
+            <button class="btn-ghost" type="button" id="clear-btn">清空</button>
+            <button class="btn-brand" type="button" id="submit-btn">提交批改</button>
+          </div>
+        </div>
+        <div class="auth-error" id="write-error" hidden>
+          <span id="write-error-text">正文太短了，再多写一点再提交</span>
+        </div>
+      </div>
+
+      <!-- 上传手写稿 -->
+      <div id="pane-photo" hidden>
+        <div class="hw-drop" id="hw-drop" role="button" tabindex="0"
+             aria-label="上传手写稿照片">
+          <span class="hw-ico" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"
+                 stroke-linecap="round" stroke-linejoin="round">
+              <path d="M4 8.2c0-1 .8-1.9 1.9-1.9h1.7l1.2-1.8h6.4l1.2 1.8h1.7c1 0 1.9.8 1.9 1.9v8.6c0 1-.8 1.9-1.9 1.9H5.9c-1 0-1.9-.8-1.9-1.9z"/>
+              <circle cx="12" cy="12.3" r="3.4"/>
+            </svg>
+          </span>
+          <b>拍下你的手写稿</b>
+          <span>纸上写完后，逐页拍照上传 · 最多 4 张</span>
+          <div class="hw-actions">
+            <button class="btn-brand" type="button" id="hw-camera">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"
+                   stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="M4 8.2c0-1 .8-1.9 1.9-1.9h1.7l1.2-1.8h6.4l1.2 1.8h1.7c1 0 1.9.8 1.9 1.9v8.6c0 1-.8 1.9-1.9 1.9H5.9c-1 0-1.9-.8-1.9-1.9z"/>
+                <circle cx="12" cy="12.3" r="3.4"/>
+              </svg>
+              打开相机拍照
+            </button>
+            <button class="btn-ghost" type="button" id="hw-album">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"
+                   stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <rect x="4" y="4.5" width="16" height="15" rx="2"/>
+                <circle cx="9.2" cy="9.6" r="1.6"/>
+                <path d="m4.5 17 4.7-4.6 3.4 3.3 2.8-2.7 4.1 4"/>
+              </svg>
+              从相册选择
+            </button>
+          </div>
+        </div>
+        <p class="hw-tips" aria-label="拍摄小贴士">
+          <span><i>✓</i>光线均匀不反光</span>
+          <span><i>✓</i>文字方向摆正</span>
+          <span><i>✓</i>一页拍一张、拍完整</span>
+        </p>
+        <input type="file" id="hw-input" accept="image/*" multiple hidden>
+        <input type="file" id="hw-camera-input" accept="image/*" capture="environment" multiple hidden>
+        <span class="hw-count" id="hw-count" hidden></span>
+        <div class="up-grid" id="hw-grid"></div>
+        <div class="auth-error" id="photo-error" hidden>
+          <span>请先上传至少一张手写稿照片</span>
+        </div>
+        <div class="write-foot hw-foot">
+          <span class="write-count">提交后同样走「AI 评阅 → 人工审核」</span>
+          <span class="spacer"></span>
+          <button class="btn-brand" type="button" id="submit-photo-btn">提交批改</button>
+        </div>
+      </div>
+
+    </section>
+
+    <!-- ========== 状态二：AI 评阅中 ========== -->
+    <section class="section reveal" id="view-grading" hidden>
+      <h2 class="section-title">AI 评阅中</h2>
+      <div class="side-card">
+        <div class="ai-steps" id="ai-steps">
+          <div class="ai-step" data-i="0"><span class="dot"></span>读取正文，纠正错别字与标点</div>
+          <div class="ai-step" data-i="1"><span class="dot"></span>分析内容立意与结构层次</div>
+          <div class="ai-step" data-i="2"><span class="dot"></span>检查语言表达，逐句标出可改进处</div>
+          <div class="ai-step" data-i="3"><span class="dot"></span>生成评阅报告，提交人工审核</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ========== 状态三：评阅结果（含审核状态） ========== -->
+    <section class="section reveal" id="view-result" hidden>
+      <h2 class="section-title">评阅结果</h2>
+
+      <!-- 审核状态横幅 -->
+      <div class="audit-bar wait" id="audit-bar"></div>
+
+      <div class="side-card">
+        <!-- 分数头 -->
+        <div class="essay-score-head">
+          <div class="hero-ring" id="score-ring" role="img" aria-label="作文得分">
+            <svg viewBox="0 0 120 120" aria-hidden="true">
+              <circle class="track" cx="60" cy="60" r="50"></circle>
+              <circle class="val"   cx="60" cy="60" r="50"></circle>
+            </svg>
+            <div class="hero-ring-txt">
+              <b id="score-num">0</b><span>分</span>
+            </div>
+          </div>
+          <div class="sh-main">
+            <p style="font-size:14.5px" id="score-line">—</p>
+            <p class="row-meta" id="score-sub">—</p>
+            <div class="chips" id="score-chips"></div>
+          </div>
+        </div>
+
+        <!-- 分项得分 -->
+        <p class="row-title" style="margin-bottom:12px">分项得分</p>
+        <ul class="bars" id="score-bars"></ul>
+
+        <!-- 逐句批注 -->
+        <p class="row-title" style="margin:20px 0 10px">逐句批注</p>
+        <div class="essay-text" id="essay-text"></div>
+        <ul class="annots" id="annot-list"></ul>
+
+        <!-- 总评 -->
+        <div style="margin-top:22px">
+          <div class="row">
+            <div class="row-ico ok">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"
+                   stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <circle cx="12" cy="12" r="8.6"/><path d="M8.4 12.3 11 14.9 15.7 9.7"/>
+              </svg>
+            </div>
+            <div class="row-main">
+              <p class="row-title">写得好的地方</p>
+              <p class="row-meta" id="good-text">—</p>
+            </div>
+          </div>
+          <div class="row">
+            <div class="row-ico warn">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"
+                   stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="M12 4.6 20 19H4z"/><path d="M12 10v4"/><path d="M12 16.4h.01"/>
+              </svg>
+            </div>
+            <div class="row-main">
+              <p class="row-title">下一步改什么</p>
+              <p class="row-meta" id="improve-text">—</p>
+            </div>
+          </div>
+        </div>
+
+        <!-- 底部动作 -->
+        <div class="write-foot" style="border:none;border-top:1px solid var(--border);margin-top:18px;border-radius:0">
+          <button class="btn-ghost" type="button" onclick="location.href='essay.html'">返回列表</button>
+          <span class="spacer"></span>
+          <button class="btn-ghost" type="button" id="rewrite-btn">再写一稿</button>
+          <button class="btn-brand" type="button" id="demo-audit-btn" hidden>模拟老师审核通过</button>
+        </div>
+        <p class="row-meta" style="margin-top:10px" id="demo-note" hidden>
+          演示按钮：正式版这一步由管理端完成 —— 老师在后台看到 AI 初评，确认或调整分数、补充评语，
+          审核通过后学生端才会展示最终结果。
+        </p>
+      </div>
+    </section>
+
+  </div>
+</main>
+</div>
+
+<script src="fx.js?v=20261021a"></script>
+<script src="app.js?v=20261021a"></script>
+<script>
+/* ============================================================
+   作文写作（二级页）：写作 / 上传 → AI 评阅 → 人工审核 → 展示结果
+   正式版：正文走 POST /api/essays → 后端调大模型评分 → 写入审核队列
+   ============================================================ */
+var TASKS = {
+  t1: {
+    title: 'My Weekend', subject: '英语', genre: '记叙文', unit: '词', need: 80,
+    prompt: {
+      lead: '假如你是李华，你的英国朋友 Peter 想了解你的周末生活。请你给他写一封邮件，介绍你上个周末的活动。',
+      pointsTitle: '内容包括：',
+      points: [
+        '你去了哪里，做了什么',
+        '和谁一起去的',
+        '你的感受'
+      ],
+      notes: '词数 80 左右；可以适当增加细节，使行文连贯；邮件的开头和结尾已给出，不计入总词数。'
+    },
+    req: {
+      words: '80 词左右',
+      minutes: '建议 30 分钟',
+      focus: '主要用一般过去时'
+    },
+    due: {
+      state: 'open',
+      label: '周五 20:00 前提交',
+      note: '还剩 2 天 6 小时'
+    },
+    guide: [
+      ['开头交代什么', '你的周末是「忙碌型」还是「放松型」，用一句话点出来'],
+      ['中间写两件事，选哪两件', '提示：一件和家人的，一件和你自己的爱好有关的'],
+      ['结尾用不用「感觉」类句式', '建议句：What a wonderful weekend I had!']
+    ],
+    start: 'write'
+  },
+  t2: {
+    title: '那一次，我读懂了坚持', subject: '语文', genre: '记叙文', unit: '字', need: 600,
+    prompt: {
+      lead: '请以「那一次，我读懂了坚持」为题，写一篇记叙文。想一想：有没有这样一件事，你本来已经想放弃，最后却坚持了下来？把它写出来。',
+      pointsTitle: '写作提示：',
+      points: [
+        '写一件你亲身经历的事，真实为上',
+        '要有具体的细节和画面，让读者看得见',
+        '写出心理变化：从「想放弃」到「坚持下来」'
+      ],
+      notes: '不少于 600 字；文中不得出现真实的人名、校名；不要写成议论文。'
+    },
+    req: {
+      words: '不少于 600 字',
+      minutes: '建议 45 分钟',
+      focus: '写一件真实经历，要有细节'
+    },
+    due: {
+      state: 'submitted',
+      label: '今天 09:12 已提交',
+      note: '等待老师审核'
+    },
+    guide: [
+      ['选事：写哪一次', '选一件你真的想放弃、但坚持下来的事，越小越好写'],
+      ['细节：写三个画面', '一个动作、一个声音、一个感受，让读者看得见'],
+      ['转折：心理怎么变', '中间要有一处「我本来想放弃」的心理描写'],
+      ['结尾：不要喊口号', '把道理藏在最后一句话里，别写「我懂得了坚持」']
+    ],
+    start: 'result',
+    audit: 'wait'
+  },
+  t3: {
+    title: '我的家乡', subject: '语文', genre: '说明文', unit: '字', need: 500,
+    prompt: {
+      lead: '每个人心里都有一个家乡。请你选择家乡的一个对象，写一篇说明文，把它介绍给没去过的人。',
+      pointsTitle: '写作提示：',
+      points: [
+        '选一个具体的对象：一条街、一座桥、一种吃食……',
+        '至少用两种说明方法，用透而不是堆砌',
+        '开头可以用一个观察或疑问，不要直接下定义'
+      ],
+      notes: '500 字左右；说明方法要自然融入；不得抄袭。'
+    },
+    req: {
+      words: '500 字左右',
+      minutes: '建议 40 分钟',
+      focus: '至少用两种说明方法'
+    },
+    due: {
+      state: 'done',
+      label: '10 月 3 日 已通过审核',
+      note: '得分 82 分'
+    },
+    guide: [
+      ['先定对象', '写家乡的什么：一条街、一座桥、一种吃食'],
+      ['说明方法别堆砌', '列数字、打比方选两种用透，比全用一遍好'],
+      ['让人有兴趣读', '开头可以用一个观察或疑问，不要直接下定义']
+    ],
+    start: 'result',
+    audit: 'ok'
+  }
+};
+
+var params = new URLSearchParams(location.search);
+var taskId = params.get('id') || 't1';
+var T = TASKS[taskId] || TASKS.t1;
+
+/* ---------- 任务信息 ---------- */
+document.getElementById('t-title').textContent = T.title;
+document.getElementById('t-subject').textContent = T.subject;
+document.getElementById('t-genre').textContent = T.genre;
+
+/* 题目原文：导语 + 要点列表 + 注意事项（学生写作时要能随时回看） */
+var P = T.prompt || {};
+document.getElementById('t-prompt').innerHTML =
+  '<p class="tp-head">题目</p>' +
+  (P.lead ? '<p class="tp-lead">' + P.lead + '</p>' : '') +
+  (P.points && P.points.length
+    ? '<p class="tp-sub">' + (P.pointsTitle || '内容包括：') + '</p>' +
+      '<ol class="tp-points">' +
+        P.points.map(function (p) { return '<li>' + p + '</li>'; }).join('') +
+      '</ol>'
+    : '') +
+  (P.notes ? '<p class="tp-note"><b>注意：</b>' + P.notes + '</p>' : '');
+
+/* 题目要求：字数 / 建议用时 / 写作要求 三栏 */
+var REQ_FIELDS = [['words', '字数'], ['minutes', '建议用时'], ['focus', '写作要求']];
+document.getElementById('t-req').innerHTML =
+  '<p class="req-head">题目要求</p>' +
+  '<div class="req-grid">' +
+    REQ_FIELDS.map(function (f) {
+      return '<div class="req-item">' +
+        '<span class="req-k">' + f[1] + '</span>' +
+        '<span class="req-v">' + (T.req[f[0]] || '—') + '</span>' +
+      '</div>';
+    }).join('') +
+  '</div>';
+
+/* 截止时间：状态决定配色与图标（进行中 / 已提交待审 / 已完成） */
+var DUE_ICO = {
+  open:      '<circle cx="12" cy="12" r="8.4"/><path d="M12 7.4V12l3.1 1.9"/>',
+  submitted: '<path d="M7.6 16.8h7.9a3.6 3.6 0 0 0 .3-7.2 4.9 4.9 0 0 0-9.3 1.1 3.1 3.1 0 0 0 1.1 6.1z"/><path d="M12 15.4v-5"/><path d="m9.9 12.4 2.1-2.1 2.1 2.1"/>',
+  done:      '<circle cx="12" cy="12" r="8.4"/><path d="M8.3 12.3 11 15 15.8 9.8"/>'
+};
+var dueEl = document.getElementById('t-due');
+dueEl.setAttribute('data-state', T.due.state);
+dueEl.innerHTML =
+  '<span class="due-ico" aria-hidden="true">' +
+    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" ' +
+      'stroke-linecap="round" stroke-linejoin="round">' + (DUE_ICO[T.due.state] || DUE_ICO.open) + '</svg>' +
+  '</span>' +
+  '<span class="due-main">' + T.due.label + '</span>' +
+  (T.due.note ? '<span class="due-note">' + T.due.note + '</span>' : '');
+
+function renderSteps(cur) {
+  var names = ['写作', 'AI 评阅', '人工审核', '展示结果'];
+  document.getElementById('t-steps').innerHTML = '<div class="steps-mini">' +
+    names.map(function (n, i) {
+      var no = i + 1;
+      var cls = no < cur ? 'done' : (no === cur ? 'cur' : '');
+      return '<span class="st ' + cls + '">' + (no < cur ? '✓ ' : '') + n + '</span>' +
+             (no < names.length ? '<span class="sep">›</span>' : '');
+    }).join('') + '</div>';
+}
+
+/* 写作引导 */
+document.getElementById('guide-list').innerHTML = T.guide.map(function (g, i) {
+  return '<li class="guide-item">' +
+    '<span class="guide-num">' + (i + 1) + '</span>' +
+    '<div><p class="guide-q">' + g[0] + '</p><p class="guide-a">' + g[1] + '</p></div>' +
+  '</li>';
+}).join('');
+
+/* ---------- 视图切换 ---------- */
+function setView(v) {
+  ['write', 'grading', 'result'].forEach(function (k) {
+    document.getElementById('view-' + k).hidden = (k !== v);
+  });
+  if (v === 'write') renderSteps(1);
+  if (v === 'grading') renderSteps(2);
+  if (v === 'result') renderSteps(T.audit === 'ok' ? 4 : 3);
+  window.scrollTo({ top: 0, behavior: 'auto' });
+}
+
+/* ---------- 写作方式切换 ---------- */
+var mode = 'online';
+document.getElementById('mode-tabs').addEventListener('click', function (e) {
+  var b = e.target.closest('.flt');
+  if (!b) return;
+  mode = b.dataset.mode;
+  Array.prototype.forEach.call(this.querySelectorAll('.flt'), function (x) {
+    x.classList.toggle('on', x === b);
+  });
+  document.getElementById('pane-online').hidden = (mode !== 'online');
+  document.getElementById('pane-photo').hidden  = (mode !== 'photo');
+  document.getElementById('guide-panel').hidden = (mode !== 'online');
+});
+
+/* ---------- 字数统计（中文按字 · 英文按词） ---------- */
+var input = document.getElementById('essay-input');
+var countEl = document.getElementById('word-count');
+function countText(t) {
+  var cn = (t.match(/[\u4e00-\u9fa5]/g) || []).length;
+  var en = (t.replace(/[\u4e00-\u9fa5]/g, ' ').match(/[A-Za-z][A-Za-z'-]*/g) || []).length;
+  return cn + en;
+}
+function refreshCount() {
+  var n = countText(input.value);
+  countEl.textContent = '已写 ' + n + ' ' + T.unit + ' · 要求 ' + T.need + ' ' + T.unit +
+                        '（' + Math.min(100, Math.round(n / T.need * 100)) + '%）';
+  countEl.classList.toggle('over', n >= T.need);
+}
+
+/* 草稿：本机保存 */
+var DRAFT_KEY = 'xj-essay-draft-' + taskId;
+try {
+  var d = localStorage.getItem(DRAFT_KEY);
+  if (d) { input.value = d; document.getElementById('draft-hint').textContent = '已恢复上次的草稿'; }
+} catch (e) {}
+refreshCount();
+input.addEventListener('input', function () {
+  refreshCount();
+  try { localStorage.setItem(DRAFT_KEY, input.value); } catch (e) {}
+});
+
+document.getElementById('clear-btn').addEventListener('click', function () {
+  if (!confirm('清空正文？草稿也会一起删掉。')) return;
+  input.value = '';
+  try { localStorage.removeItem(DRAFT_KEY); } catch (e) {}
+  document.getElementById('draft-hint').textContent = '草稿会自动保存在本机';
+  refreshCount();
+});
+
+/* ---------- 上传手写稿 ---------- */
+var HW_MAX = 4;
+var hwImgs = [];
+var hwDrop  = document.getElementById('hw-drop');
+var hwInput = document.getElementById('hw-input');        /* 相册 / 文件 */
+var hwCamInput = document.getElementById('hw-camera-input'); /* 相机直拍 */
+var hwGrid  = document.getElementById('hw-grid');
+var hwCount = document.getElementById('hw-count');
+
+function renderHwGrid() {
+  hwGrid.innerHTML = hwImgs.map(function (im, i) {
+    return '<div class="up-thumb"><img src="' + im.src + '" alt="手写稿第 ' + (i + 1) + ' 页">' +
+           '<span class="up-no">第 ' + (i + 1) + ' 页</span>' +
+           '<button class="up-x" type="button" data-id="' + im.id + '" aria-label="删除这张">×</button></div>';
+  }).join('');
+  var full = hwImgs.length >= HW_MAX;
+  hwCount.hidden = (hwImgs.length === 0);
+  hwCount.className = 'hw-count' + (full ? ' full' : '');
+  hwCount.textContent = full ? '已传满 ' + hwImgs.length + '/' + HW_MAX + ' 张，如需重拍请先删除'
+                             : '已上传 ' + hwImgs.length + '/' + HW_MAX + ' 张';
+  hwDrop.style.display = full ? 'none' : '';
+}
+
+function readHwFiles(files) {
+  document.getElementById('photo-error').hidden = true;
+  Array.prototype.forEach.call(files, function (f) {
+    if (!/^image\//.test(f.type)) return;
+    if (hwImgs.length >= HW_MAX) return;
+    var r = new FileReader();
+    r.onload = function () {
+      hwImgs.push({ id: 'h' + Date.now() + Math.random(), src: r.result });
+      renderHwGrid();
+    };
+    r.readAsDataURL(f);
+  });
+}
+
+hwInput.addEventListener('change', function () {
+  readHwFiles(hwInput.files || []);
+  hwInput.value = '';
+});
+hwCamInput.addEventListener('change', function () {
+  readHwFiles(hwCamInput.files || []);
+  hwCamInput.value = '';
+});
+
+/* 双入口：按钮各自触发对应的 input，且不冒泡到整块虚线框 */
+document.getElementById('hw-camera').addEventListener('click', function (e) {
+  e.stopPropagation(); hwCamInput.click();
+});
+document.getElementById('hw-album').addEventListener('click', function (e) {
+  e.stopPropagation(); hwInput.click();
+});
+
+/* 整块虚线框：点击 / 键盘 / 拖拽 */
+hwDrop.addEventListener('click', function () { hwInput.click(); });
+hwDrop.addEventListener('keydown', function (e) {
+  if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); hwInput.click(); }
+});
+['dragover', 'dragenter'].forEach(function (ev) {
+  hwDrop.addEventListener(ev, function (e) { e.preventDefault(); hwDrop.classList.add('dragover'); });
+});
+['dragleave', 'drop'].forEach(function (ev) {
+  hwDrop.addEventListener(ev, function (e) { e.preventDefault(); hwDrop.classList.remove('dragover'); });
+});
+hwDrop.addEventListener('drop', function (e) {
+  readHwFiles(e.dataTransfer && e.dataTransfer.files);
+});
+
+hwGrid.addEventListener('click', function (e) {
+  var x = e.target.closest('.up-x');
+  if (!x) return;
+  hwImgs = hwImgs.filter(function (im) { return im.id !== x.dataset.id; });
+  renderHwGrid();
+});
+
+/* ---------- 提交 → AI 评阅进度 → 结果 ---------- */
+function submit() {
+  setView('grading');
+  var steps = document.querySelectorAll('#ai-steps .ai-step');
+  var i = 0;
+  (function next() {
+    if (i > 0) steps[i - 1].className = 'ai-step done';
+    if (i >= steps.length) { setTimeout(showResult, 420); return; }
+    steps[i].className = 'ai-step on';
+    i++;
+    setTimeout(next, 620);
+  })();
+}
+document.getElementById('submit-btn').addEventListener('click', function () {
+  var n = countText(input.value);
+  if (n < Math.min(30, T.need * 0.5)) {
+    document.getElementById('write-error-text').textContent =
+      '正文才 ' + n + ' ' + T.unit + '，太短了（要求 ' + T.need + ' ' + T.unit + '），再多写一点再提交';
+    document.getElementById('write-error').hidden = false;
+    return;
+  }
+  document.getElementById('write-error').hidden = true;
+  submit();
+});
+document.getElementById('submit-photo-btn').addEventListener('click', function () {
+  if (!hwImgs.length) { document.getElementById('photo-error').hidden = false; return; }
+  document.getElementById('photo-error').hidden = true;
+  submit();
+});
+document.getElementById('rewrite-btn').addEventListener('click', function () {
+  T.audit = 'wait';
+  setView('write');
+});
+
+/* ---------- 演示：模拟管理端审核 ---------- */
+document.getElementById('demo-audit-btn').addEventListener('click', function () {
+  T.audit = 'ok';
+  showResult();
+});
+
+/* ============================================================
+   结果数据（演示：正式版来自大模型 / 教师审核接口）
+   ============================================================ */
+var ESSAY = {
+  text: [
+    '记得那是去年冬天，学校要办长跑比赛。我第一个报了名，却在第一次训练时就想放弃。那天跑完两圈，我的腿像灌了铅，嗓子冒着火气，坐在跑道边半天说不出话。妈妈知道后没有劝我，只是把闹钟调早了半小时。',
+    '后来的二十天，我每天天不亮就出门。清晨的路灯还亮着，呼出的白气一团一团，我开始数着路边梧桐树往学校跑。有一次下雪，我在结冰的拐角摔了一跤，膝盖破了皮，爬起来的时候眼泪掉在雪地上。可我还是跑完了那三圈。',
+    '比赛那天，我没有拿到名次。冲过终点线的时候，我却笑了——因为我终于把「放弃」这两个字，从自己的字典里划掉了。'
+  ],
+  marks: [
+    { p: 0, q: '嗓子冒着火气', fix: '喉咙像被砂纸磨过一样' },
+    { p: 1, q: '可我还是跑完了那三圈', fix: '可我还是咬牙跑完了最后半圈' }
+  ],
+  annots: [
+    { orig: '嗓子冒着火气', why: '表述偏口语，和前句「腿像灌了铅」的比喻不搭', fix: '喉咙像被砂纸磨过一样' },
+    { orig: '可我还是跑完了那三圈', why: '与上句「摔了一跤」之间有跳跃，缺一句心理变化', fix: '可我还是咬牙跑完了最后半圈，心里憋着一股劲' }
+  ],
+  ai: {
+    score: 85,
+    items: [
+      { name: '内容与立意（30）', val: 28, pct: 93 },
+      { name: '结构与层次（25）', val: 21, pct: 84 },
+      { name: '语言表达（30）',   val: 26, pct: 87 },
+      { name: '标点与规范（15）', val: 10, pct: 67 }
+    ],
+    line: '选材真实、有画面感，是一篇有「自己的事」的记叙文',
+    sub: '主要丢分点：第二段的心理变化缺一句过渡，标点有两处误用（逗号连接了两个完整句）',
+    chips: ['比喻贴切', '细节真实', '需补心理描写'],
+    good: '「膝盖破了皮，爬起来的时候眼泪掉在雪地上」把坚持写得很具体；结尾用「字典」作比，收得住，不喊口号。',
+    improve: '第二段摔跤之后，补一句当时的心理（想放弃 / 为什么没放弃）；「嗓子冒着火气」换成比喻，和前后句式统一。'
+  },
+  final: {
+    score: 88,
+    items: [
+      { name: '内容与立意（30）', val: 29, pct: 97 },
+      { name: '结构与层次（25）', val: 22, pct: 88 },
+      { name: '语言表达（30）',   val: 26, pct: 87 },
+      { name: '标点与规范（15）', val: 11, pct: 73 }
+    ],
+    line: '老师已审核 · 立意与细节优于班级平均，建议作为本节课范文片段',
+    sub: '老师在 AI 初评（85 分）基础上，内容项 +1、结构项 +1、标点项 +1 —— 选材的价值 AI 容易低估',
+    chips: ['已收录成长记录', '可作范文片段'],
+    reviewer: '张老师',
+    reviewAt: '10 月 10 日 10:20',
+    comment: '细节写得实，「字典」这个比喻留着，很好。第二段的心理变化补一句就完整了 —— 你原稿里有这个感受，只是没写出来。'
+  }
+};
+
+var showResult = (function () {
+  var shown = false;
+  return function () {
+    var isFinal = (T.audit === 'ok');
+    var data = isFinal ? ESSAY.final : ESSAY.ai;
+
+    /* 审核横幅 */
+    var bar = document.getElementById('audit-bar');
+    if (isFinal) {
+      bar.className = 'audit-bar ok';
+      bar.innerHTML = '<div class="ab-main"><b>已通过人工审核</b> · ' + data.reviewer + ' · ' + data.reviewAt +
+        '<br>' + data.comment + '</div>';
+    } else {
+      bar.className = 'audit-bar wait';
+      bar.innerHTML = '<div class="ab-main"><b>AI 已评分，等待老师人工审核</b>' +
+        '<br>审核通过后才会展示最终结果 —— 老师可以确认或调整 AI 的分数、补充评语。</div>';
+    }
+
+    /* 分数头 */
+    document.getElementById('score-num').textContent = data.score;
+    document.getElementById('score-ring').setAttribute('data-ring', data.score);
+    document.getElementById('score-ring').setAttribute('aria-label', '作文得分 ' + data.score + ' 分');
+    document.getElementById('score-line').textContent = data.line;
+    document.getElementById('score-sub').textContent = data.sub;
+    document.getElementById('score-chips').innerHTML = data.chips.map(function (c) {
+      return '<span class="chip ' + (isFinal ? 'ok' : '') + '">' + c + '</span>';
+    }).join('');
+
+    /* 分项条 */
+    document.getElementById('score-bars').innerHTML = data.items.map(function (it) {
+      var lv = it.pct >= 85 ? 'lv-3' : (it.pct >= 70 ? 'lv-2' : 'lv-1');
+      return '<li class="bar-row">' +
+        '<span class="bar-name">' + it.name + '</span>' +
+        '<span class="bar-track"><i class="' + lv + '" style="--w:' + it.pct + '%"></i></span>' +
+        '<span class="bar-val">' + it.val + '</span>' +
+      '</li>';
+    }).join('');
+
+    /* 正文 + 标红句 */
+    document.getElementById('essay-text').innerHTML = ESSAY.text.map(function (p, pi) {
+      var html = p;
+      ESSAY.marks.filter(function (m) { return m.p === pi; }).forEach(function (m) {
+        html = html.replace(m.q, '<mark>' + m.q + '</mark>');
+      });
+      return '<p style="margin:0 0 12px">' + html + '</p>';
+    }).join('');
+
+    /* 批注列表 */
+    document.getElementById('annot-list').innerHTML = ESSAY.annots.map(function (a, i) {
+      return '<li class="annot">' +
+        '<span class="no">' + (i + 1) + '</span>' +
+        '<div class="an-main">' +
+          '<p style="margin:0"><span class="an-wrong">' + a.orig + '</span> —— ' + a.why + '</p>' +
+          '<p style="margin:2px 0 0;color:var(--text-2)">建议改成：<span class="an-right">' + a.fix + '</span></p>' +
+        '</div>' +
+      '</li>';
+    }).join('');
+
+    document.getElementById('good-text').textContent = ESSAY.ai.good;
+    document.getElementById('improve-text').textContent = ESSAY.ai.improve;
+
+    document.getElementById('demo-audit-btn').hidden = isFinal;
+    document.getElementById('demo-note').hidden = isFinal;
+
+    setView('result');
+    if (window.FX && FX.ring) FX.ring(document.getElementById('score-ring'));
+  };
+})();
+
+/* ---------- 初始化：按任务状态进入对应视图 ---------- */
+if (T.start === 'result') {
+  setTimeout(showResult, 260);
+} else {
+  setView('write');
+}
+</script>
+</body>
+</html>

@@ -1,0 +1,584 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="light">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#F5F6F8">
+<title>我的错题 · 学迹</title>
+<script>document.documentElement.classList.add('js-on');</script>
+<link rel="stylesheet" href="style.css?v=20261021a">
+</head>
+<body data-page="mistakes">
+
+<div class="app">
+<main class="main">
+
+  <header class="topbar" id="topbar"></header>
+
+  <div class="content">
+
+    <!-- 错题本总览 -->
+    <section class="mk-hero reveal">
+      <div class="mk-hero-main">
+        <div class="hero-ring" id="mk-ring" data-ring="0" role="img" aria-label="错题订正进度 0%">
+          <svg viewBox="0 0 120 120" aria-hidden="true">
+            <circle class="track" cx="60" cy="60" r="50"></circle>
+            <circle class="val"   cx="60" cy="60" r="50"></circle>
+          </svg>
+          <div class="hero-ring-txt">
+            <b id="mk-fixed">0</b><span>/ <span id="mk-total">0</span> 道</span>
+          </div>
+        </div>
+
+        <div class="mk-hero-txt">
+          <p class="mk-hero-k">错题本 · 独立模块</p>
+          <h1 class="mk-hero-h">待订正 <b id="mk-pending">0</b> 道</h1>
+          <p class="mk-hero-meta" id="mk-meta">—</p>
+          <div class="chips" id="mk-chips"></div>
+        </div>
+      </div>
+
+      <div class="mk-hero-act">
+        <a class="btn-brand" id="mk-start" href="mistake-review.html">开始今日复习</a>
+        <a class="btn-ghost" id="mk-all" href="mistake-review.html?scope=all">全部待订正</a>
+      </div>
+
+      <p class="mk-hero-note">
+        错题只从这里复习：答错自动收进来，重做答对就算订正。每日题目里只练新题，两边不混着算进度。
+      </p>
+    </section>
+
+    <!-- 今日待复习 -->
+    <section class="section reveal">
+      <h2 class="section-title">今日待复习 <span class="count" id="mk-due-count">· 按 1 / 2 / 4 / 7 / 15 / 30 天排</span></h2>
+      <div class="mk-due" id="mk-due"></div>
+      <p class="mk-due-empty" id="mk-due-empty" hidden></p>
+    </section>
+
+    <!-- 四个数 -->
+    <section class="section reveal">
+      <div class="mk-quad" id="mk-quad"></div>
+    </section>
+
+    <!-- 错在哪 -->
+    <section class="section reveal">
+      <h2 class="section-title">错在哪 <span class="count">· 科目分布与高频错点</span></h2>
+      <div class="mk-dist" id="mk-dist"></div>
+    </section>
+
+    <!-- 错题清单 -->
+    <section class="section reveal">
+      <h2 class="section-title">错题清单 <span class="count" id="mk-count">· 点卡片展开解析</span></h2>
+      <div class="flt-row" id="mk-state"></div>
+      <div class="flt-row" id="mk-subj"></div>
+      <div class="mk-list" id="mk-list"><!-- JS --></div>
+      <div class="mk-empty" id="mk-empty" hidden>
+        <p class="mk-empty-ico">＋</p>
+        <p class="mk-empty-h" id="mk-empty-h">错题本还是空的</p>
+        <p class="mk-empty-p" id="mk-empty-p">做题时答错的题会自动收进来。</p>
+        <div class="mk-empty-act">
+          <button class="btn-ghost" type="button" id="mk-clear-flt" hidden>看全部错题</button>
+          <a class="btn-brand" id="mk-empty-go" href="daily.html">去每日题目做题</a>
+        </div>
+      </div>
+    </section>
+
+    <!-- 说明 -->
+    <section class="section reveal">
+      <div class="q-note">
+        <span class="qn-ico">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"
+               stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M6.6 3.4h6.9l4.9 4.9v12.3H6.6z"/><path d="M13.3 3.5v5.1h5.1"/>
+            <path d="M9.8 12.4l4.4 4.4M14.2 12.4l-4.4 4.4"/>
+          </svg>
+        </span>
+        <span class="qn-txt">
+          <b>错题是怎么进来、又怎么出去的？</b>
+          <span>提交作答时答错会自动收进来，也可以在题面上点「加入错题本」手动收。
+                重做一次答对，就自动标成已订正 —— 不靠手动清，靠真会了。
+                每道题按「错过几次」排在 1 / 2 / 4 / 7 / 15 / 30 天后复习，答错一次就退回最短间隔。</span>
+        </span>
+        <a class="qn-go" href="mistake-review.html">去复习 ›</a>
+      </div>
+    </section>
+
+  </div>
+</main>
+</div>
+
+<script src="fx.js?v=20261021a"></script>
+<script src="app.js?v=20261021a"></script>
+<script src="qbank.js?v=20261021a"></script>
+<script>
+/* ============================================================
+   我的错题（独立模块首页）
+   ------------------------------------------------------------
+   这一页只做「看 + 挑」：概览 → 今日待复习 → 分布 → 清单。
+   真正做题在 mistake-review.html（独立的错题复习会话），
+   不复用每日题目的 practice / answer —— 两条流程各算各的进度。
+   ============================================================ */
+
+var SUBJ_C = {
+  '语文': 'var(--c-cn)', '数学': 'var(--c-math)', '英语': 'var(--c-en)',
+  '物理': 'var(--c-phy)', '化学': 'var(--c-che)', '生物': 'var(--c-bio)',
+  '历史': 'var(--c-his)', '道法': 'var(--c-pol)', '地理': 'var(--c-geo)'
+};
+var LETTER = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H'];
+
+function esc(s) {
+  return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+function plain(html) {
+  return String(html || '').replace(/<[^>]*>/g, '').replace(/\{\{\d+\}\}/g, '＿＿')
+    .replace(/\s+/g, ' ').trim();
+}
+function cut(s, n) { s = String(s || ''); return s.length > n ? s.slice(0, n) + '…' : s; }
+function subjChip(name) {
+  return '<span class="chip q-subj"><i class="dot" style="background:' +
+         (SUBJ_C[name] || 'var(--brand)') + '"></i>' + name + '</span>';
+}
+function typeChip(t) {
+  var cls = t === 'fill_blank' ? 'fill' : (t === 'short_answer' ? 'short' : t);
+  return '<span class="qtype qtype-' + cls + '">' + (QB.typeInfo[t] || {}).label + '</span>';
+}
+function starHTML(n) {
+  var s = '';
+  for (var i = 0; i < 3; i++) s += (i < n ? '★' : '<i>★</i>');
+  return '<span class="q-star">' + s + '</span>';
+}
+function ago(ts) {
+  if (!ts) return '—';
+  var d = Date.now() - ts, m = Math.floor(d / 60000);
+  if (m < 1)   return '刚刚';
+  if (m < 60)  return m + ' 分钟前';
+  var h = Math.floor(m / 60);
+  if (h < 24)  return h + ' 小时前';
+  var dd = Math.floor(h / 24);
+  if (dd < 30) return dd + ' 天前';
+  var dt = new Date(ts);
+  return (dt.getMonth() + 1) + ' 月 ' + dt.getDate() + ' 日';
+}
+function fmtDate(ts) {
+  var d = new Date(ts);
+  return (d.getMonth() + 1) + ' 月 ' + d.getDate() + ' 日';
+}
+
+/* ---------- 答案 / 正确答案 翻成人话 ---------- */
+function myAnswer(item, ans) {
+  if (ans == null) return '<span class="bad">未作答</span>';
+  if (item.type === 'choice') {
+    var arr = [].concat(ans);
+    if (!arr.length) return '<span class="bad">未作答</span>';
+    return arr.map(function (id) {
+      var i = (item.options || []).map(function (o) { return o.id; }).indexOf(id);
+      return i >= 0 ? LETTER[i] : '?';
+    }).join('、');
+  }
+  if (item.type === 'fill_blank') {
+    return (item.blanks || []).map(function (b) {
+      var v = ans[b.n];
+      return b.label + ' <b>' + esc(v == null || v === '' ? '未填' : v) + '</b>';
+    }).join('　');
+  }
+  var t = String(ans).trim();
+  return t ? esc(cut(t, 80)) : '<span class="bad">未作答</span>';
+}
+function rightAnswer(item) {
+  if (item.type === 'choice') {
+    return (item.answer || []).map(function (id) {
+      var i = (item.options || []).map(function (o) { return o.id; }).indexOf(id);
+      return i >= 0 ? LETTER[i] + '· ' + plain(item.options[i].text) : '';
+    }).join('　');
+  }
+  if (item.type === 'fill_blank') {
+    return (item.blanks || []).map(function (b) {
+      return b.label + ' ' + (b.accept && b.accept[0] ? b.accept[0] : '—');
+    }).join('　');
+  }
+  if (item.answer_text) return esc(cut(plain(item.answer_text), 140));
+  return (item.rubric || []).map(function (r) { return r.point; }).join('；') || '按采分点判分';
+}
+/* 卡片上的一行对比：上次答的 → 正确 */
+function cmpLine(r) {
+  var a = r.attempt;
+  var mine = a ? myAnswer(r.item, a.ans) : '<span class="bad">未作答</span>';
+  return '<p class="mkc-cmp">' +
+    '<span class="mkc-cmp-k">上次</span>' +
+    '<span class="mkc-cmp-v bad">' + mine + '</span>' +
+    '<span class="mkc-cmp-ar">→</span>' +
+    '<span class="mkc-cmp-v good">' + rightAnswer(r.item) + '</span>' +
+  '</p>';
+}
+
+/* ---------- 排程文案 ---------- */
+function dueChip(r) {
+  var d = r.due || QB.mistakeDue(r.e);
+  if (r.e.fixed) return '<span class="mkc-tag ok">已订正 · ' + d.gap + ' 天后终检</span>';
+  if (d.due)     return '<span class="mkc-tag due">今天该复习</span>';
+  return '<span class="mkc-tag wait">' + (d.days <= 0 ? '今天稍后' : d.days + ' 天后复习') + '</span>';
+}
+
+/* ---------- 状态 ---------- */
+var fSubj  = 'all';
+var fState = 'all';
+var opened = {};
+
+function decorate(list) {
+  return list.map(function (r) {
+    r.due = QB.mistakeDue(r.e);
+    return r;
+  });
+}
+
+/* 排序：待订正在前（到期的更前）→ 错得多的 → 最近错的 */
+function sortList(list) {
+  return list.slice().sort(function (a, b) {
+    var af = a.e.fixed ? 1 : 0, bf = b.e.fixed ? 1 : 0;
+    if (af !== bf) return af - bf;
+    if (!af && (a.due.due !== b.due.due)) return a.due.due ? -1 : 1;
+    if ((b.e.wrong || 0) !== (a.e.wrong || 0)) return (b.e.wrong || 0) - (a.e.wrong || 0);
+    return (b.e.lastAt || 0) - (a.e.lastAt || 0);
+  });
+}
+
+function pick(list) {
+  return sortList(list.filter(function (r) {
+    if (fSubj !== 'all' && r.block.subject !== fSubj) return false;
+    if (fState === 'pending' && r.e.fixed) return false;
+    if (fState === 'fixed'   && !r.e.fixed) return false;
+    return true;
+  }));
+}
+
+/* ============================================================
+   概览
+   ============================================================ */
+function renderHero(all) {
+  var s = QB.mistakeStats();
+  var q = QB.mistakeQueue({ limit: 12 });
+  var pct = s.total ? Math.round(s.fixed / s.total * 100) : 0;
+
+  var ring = document.getElementById('mk-ring');
+  ring.setAttribute('data-ring', pct);
+  ring.setAttribute('aria-label', '错题订正进度 ' + pct + '%');
+  if (window.FX && FX.ring) FX.ring(ring, pct);
+  document.getElementById('mk-fixed').textContent = s.fixed;
+  document.getElementById('mk-total').textContent = s.total;
+  document.getElementById('mk-pending').textContent = s.pending;
+
+  document.getElementById('mk-meta').textContent = s.total
+    ? '共 ' + s.total + ' 道错题 · 覆盖 ' + Object.keys(s.subjects).length + ' 科 · 今日到期 ' + q.dueN + ' 道'
+    : '还没有错题 —— 做题时答错会自动收进来';
+
+  var hardest = all.filter(function (r) { return (r.e.wrong || 0) >= 3; }).length;
+
+  document.getElementById('mk-chips').innerHTML =
+    (q.dueN ? '<span class="chip warn">今日到期 ' + q.dueN + ' 道</span>' : '') +
+    (s.pending && !q.dueN ? '<span class="chip brand">有待订正 · 还没到复习时间</span>' : '') +
+    (s.pending ? '' : (s.total ? '<span class="chip ok">全部订正完</span>' : '')) +
+    (hardest ? '<span class="chip">反复错 ' + hardest + ' 道</span>' : '') +
+    (s.week ? '<span class="chip brand">本周新增 ' + s.week + ' 道</span>' : '');
+
+  /* 主按钮：有到期 → 今日复习；没到期但有待订正 → 提前复习 */
+  var start = document.getElementById('mk-start');
+  var allBtn = document.getElementById('mk-all');
+  if (q.dueN) {
+    start.textContent = '开始今日复习（' + q.dueN + ' 道）';
+    start.setAttribute('href', 'mistake-review.html?scope=today');
+  } else if (s.pending) {
+    start.textContent = '提前复习（' + s.pending + ' 道待订正）';
+    start.setAttribute('href', 'mistake-review.html?scope=all');
+  } else if (s.total) {
+    start.textContent = '都订正完了 · 过一遍终检';
+    start.setAttribute('href', 'mistake-review.html?scope=fixed');
+  } else {
+    start.textContent = '还没有错题可复习';
+    start.setAttribute('href', 'mistake-review.html');
+  }
+  allBtn.hidden = s.pending === 0;
+  allBtn.textContent = '全部待订正（' + s.pending + '）';
+}
+
+/* ============================================================
+   今日待复习
+   ============================================================ */
+function renderDue(all) {
+  var q = QB.mistakeQueue({ limit: 6 });
+  var box = document.getElementById('mk-due');
+  var empty = document.getElementById('mk-due-empty');
+  var list = q.list.slice(0, 4);
+
+  box.innerHTML = list.map(function (r) {
+    var d = r.due || QB.mistakeDue(r.e);
+    return '<a class="mk-due-card' + (r.e.fixed ? ' is-fixed' : '') + '" ' +
+        'href="mistake-review.html?ids=' + encodeURIComponent(r.e.itemId) + '">' +
+      '<span class="mk-due-top">' +
+        '<i class="dot" style="background:' + (SUBJ_C[r.block.subject] || 'var(--brand)') + '"></i>' +
+        '<span class="mk-due-subj">' + r.block.subject + '</span>' +
+        (r.e.fixed ? '<span class="mk-due-tag ok">终检</span>'
+                   : '<span class="mk-due-tag">第 ' + d.stage + ' 次</span>') +
+      '</span>' +
+      '<span class="mk-due-q">' + esc(cut(plain(r.item.stem), 46)) + '</span>' +
+      '<span class="mk-due-foot">' +
+        '<span class="mk-due-wrong">错 ' + (r.e.wrong || 1) + ' 次</span>' +
+        '<span class="mk-due-go">复习 ›</span>' +
+      '</span>' +
+    '</a>';
+  }).join('');
+
+  if (list.length) {
+    box.insertAdjacentHTML('beforeend',
+      '<a class="mk-due-more" href="mistake-review.html?scope=today">' +
+        '<span class="mk-due-more-n">' + q.dueN + '</span>' +
+        '<span class="mk-due-more-t">道到期<br>一次做完 ›</span>' +
+      '</a>');
+  }
+
+  empty.hidden = list.length > 0;
+  if (!list.length) {
+    empty.innerHTML = all.length
+      ? '目前没有到复习时间的错题。<b>' + q.pendingN + ' 道待订正</b>可以提前过一遍 —— 提前做对同样算订正。' +
+        ' <a href="mistake-review.html?scope=all">提前复习 ›</a>'
+      : '错题本还是空的。做题时答错的题会自动收进来，收进来之后这里按 1 / 2 / 4 / 7 / 15 / 30 天的节奏提醒你。';
+  }
+  document.getElementById('mk-due-count').textContent =
+    '· ' + (q.dueN ? q.dueN + ' 道到期' : '今天没有到期') + ' · 共 ' + all.length + ' 道错题';
+}
+
+/* ============================================================
+   四个数
+   ============================================================ */
+function renderQuad(all) {
+  var s = QB.mistakeStats();
+  var q = QB.mistakeQueue({ limit: 12 });
+  var rows = [
+    { n: s.total,   t: '错题总数', c: '' },
+    { n: s.pending, t: '待订正',   c: 'warn' },
+    { n: q.dueN,    t: '今日到期', c: 'brand' },
+    { n: s.fixed,   t: '已订正',   c: 'ok' }
+  ];
+  document.getElementById('mk-quad').innerHTML = rows.map(function (r) {
+    return '<div class="mk-stat ' + r.c + '"><b>' + r.n + '</b><span>' + r.t + '</span></div>';
+  }).join('');
+}
+
+/* ============================================================
+   错在哪：科目分布 + 高频知识点
+   ============================================================ */
+function renderDist(all) {
+  var bySubj = {}, byKp = {};
+  all.forEach(function (r) {
+    var s = r.block.subject;
+    bySubj[s] = (bySubj[s] || 0) + 1;
+    var k = r.block.kp || '未标注';
+    byKp[k] = (byKp[k] || 0) + 1;
+  });
+
+  var subjs = Object.keys(bySubj).sort(function (a, b) { return bySubj[b] - bySubj[a]; });
+  var kps = Object.keys(byKp).sort(function (a, b) { return byKp[b] - byKp[a]; }).slice(0, 5);
+  var maxS = subjs.length ? bySubj[subjs[0]] : 1;
+
+  var left = subjs.length
+    ? subjs.map(function (k) {
+        return '<div class="mk-bar">' +
+          '<span class="mk-bar-k">' + k + '</span>' +
+          '<i class="mk-bar-t"><b style="width:' + Math.round(bySubj[k] / maxS * 100) + '%;background:' +
+            (SUBJ_C[k] || 'var(--brand)') + '"></b></i>' +
+          '<em class="mk-bar-n">' + bySubj[k] + '</em>' +
+        '</div>';
+      }).join('')
+    : '<p class="mk-dist-none">还没有数据。</p>';
+
+  var right = kps.length
+    ? kps.map(function (k, i) {
+        return '<li class="mk-kp">' +
+          '<span class="mk-kp-no">' + (i + 1) + '</span>' +
+          '<span class="mk-kp-n">' + esc(k) + '</span>' +
+          '<span class="mk-kp-c">' + byKp[k] + ' 道</span>' +
+        '</li>';
+      }).join('')
+    : '<li class="mk-dist-none">还没有数据。</li>';
+
+  document.getElementById('mk-dist').innerHTML =
+    '<div class="mk-dist-col">' +
+      '<p class="mk-dist-h">按科目</p>' +
+      '<div class="mk-bars">' + left + '</div>' +
+    '</div>' +
+    '<div class="mk-dist-col">' +
+      '<p class="mk-dist-h">最容易错的点</p>' +
+      '<ul class="mk-kps">' + right + '</ul>' +
+    '</div>';
+}
+
+/* ============================================================
+   清单
+   ============================================================ */
+function renderFilters(all) {
+  var s = QB.mistakeStats();
+  var st = [['all', '全部', s.total], ['pending', '待订正', s.pending], ['fixed', '已订正', s.fixed]];
+  document.getElementById('mk-state').innerHTML = st.map(function (x) {
+    return '<button class="flt' + (fState === x[0] ? ' on' : '') + '" type="button" ' +
+           'data-state="' + x[0] + '">' + x[1] + ' <b>' + x[2] + '</b></button>';
+  }).join('');
+
+  var subjs = Object.keys(s.subjects).sort(function (a, b) { return s.subjects[b] - s.subjects[a]; });
+  document.getElementById('mk-subj').innerHTML =
+    (subjs.length > 1
+      ? '<button class="flt' + (fSubj === 'all' ? ' on' : '') + '" type="button" data-subj="all">全部科目</button>'
+      : '') +
+    subjs.map(function (k) {
+      return '<button class="flt' + (fSubj === k ? ' on' : '') + '" type="button" data-subj="' + k + '">' +
+             k + ' <b>' + s.subjects[k] + '</b></button>';
+    }).join('');
+}
+
+function cardHTML(r) {
+  var e = r.e, item = r.item, block = r.block;
+  var open = !!opened[e.itemId];
+  var d = r.due || QB.mistakeDue(e);
+
+  return '<article class="mkc' + (e.fixed ? ' is-fixed' : '') + '" data-card="' + e.itemId + '">' +
+    '<header class="mkc-head" data-fold="' + e.itemId + '">' +
+      '<div class="mkc-line1">' +
+        '<span class="mk-dot' + (e.fixed ? ' ok' : (d.due ? ' due' : '')) + '"></span>' +
+        typeChip(item.type) +
+        subjChip(block.subject) +
+        starHTML(block.star) +
+        (e.wrong >= 3 ? '<span class="mkc-hot">反复错</span>' : '') +
+      '</div>' +
+      '<p class="mkc-stem">' + esc(cut(plain(item.stem), 110)) + '</p>' +
+      cmpLine(r) +
+      '<div class="mkc-foot">' +
+        '<span class="mkc-kp">' + esc(block.kp) + '</span>' +
+        '<span class="mkc-times">' + (e.wrong ? '错 ' + e.wrong + ' 次' : '手动收藏') + '</span>' +
+        dueChip(r) +
+        '<span class="mkc-ago">' + ago(e.lastAt) + '</span>' +
+        '<span class="mkc-fold">' + (open ? '收起 ▴' : '展开解析 ▾') + '</span>' +
+      '</div>' +
+    '</header>' +
+    '<div class="mkc-body"' + (open ? '' : ' hidden') + '>' +
+      '<p class="mk-ans">我的答案：<b class="bad">' + myAnswer(item, r.attempt ? r.attempt.ans : null) + '</b></p>' +
+      '<p class="mk-ans">正确答案：<b class="good">' + rightAnswer(item) + '</b></p>' +
+      (item.explanation ? '<div class="mk-why"><b>讲解：</b>' + item.explanation + '</div>' : '') +
+      '<p class="mkc-sched">' +
+        '<span class="mkc-sched-k">复习节奏</span>' +
+        (e.fixed
+          ? '已订正 · 下次终检 ' + fmtDate(d.at) + '（' + d.gap + ' 天后）'
+          : (d.due
+              ? '已到期 · 今天复习一次，答对就销号'
+              : '下次复习 ' + fmtDate(d.at) + '（' + Math.max(0, d.days) + ' 天后）')) +
+        ' · 错过 ' + (e.wrong || 1) + ' 次，间隔 ' + d.gap + ' 天' +
+      '</p>' +
+      '<div class="mkc-acts">' +
+        '<a class="btn-brand sm" href="mistake-review.html?ids=' + encodeURIComponent(e.itemId) + '">复习这道</a>' +
+        '<button class="btn-ghost' + (e.fixed ? ' done' : '') + '" type="button" ' +
+          'data-fix="' + e.itemId + '">' + (e.fixed ? '✓ 已订正 · 撤销' : '标记已订正') + '</button>' +
+        '<button class="btn-ghost" type="button" data-del="' + e.itemId + '">移出错题本</button>' +
+      '</div>' +
+    '</div>' +
+  '</article>';
+}
+
+function renderList(all) {
+  var list = pick(all);
+  var box = document.getElementById('mk-list');
+  var empty = document.getElementById('mk-empty');
+
+  box.innerHTML = list.map(cardHTML).join('');
+  var anyFilter = (fSubj !== 'all' || fState !== 'all');
+  empty.hidden = list.length > 0;
+
+  var clearBtn = document.getElementById('mk-clear-flt');
+  var goBtn = document.getElementById('mk-empty-go');
+  if (all.length && anyFilter) {
+    document.getElementById('mk-empty-h').textContent = '这个筛选下没有错题';
+    document.getElementById('mk-empty-p').textContent = '换个条件看看，或者直接看全部。';
+    clearBtn.hidden = false;
+    goBtn.hidden = true;
+  } else if (all.length) {
+    document.getElementById('mk-empty-h').textContent = '没有可显示的错题';
+    document.getElementById('mk-empty-p').textContent = '';
+    clearBtn.hidden = true;
+    goBtn.hidden = true;
+  } else {
+    document.getElementById('mk-empty-h').textContent = '错题本还是空的';
+    document.getElementById('mk-empty-p').textContent = '做题时答错的题会自动收进来，也可以在题面上手动点「加入错题本」。';
+    clearBtn.hidden = true;
+    goBtn.hidden = false;
+  }
+
+  document.getElementById('mk-count').textContent =
+    '· ' + list.length + ' 道' + (anyFilter ? '（筛选自 ' + all.length + ' 道）' : '') +
+    ' · 点卡片展开解析';
+}
+
+/* ============================================================
+   渲染总入口
+   ============================================================ */
+function renderAll() {
+  var all = decorate(QB.mistakeList());
+  renderHero(all);
+  renderDue(all);
+  renderQuad(all);
+  renderDist(all);
+  renderFilters(all);
+  renderList(all);
+}
+
+/* ============================================================
+   交互
+   ============================================================ */
+document.getElementById('mk-state').addEventListener('click', function (e) {
+  var b = e.target.closest('.flt');
+  if (!b) return;
+  fState = b.dataset.state;
+  renderFilters(decorate(QB.mistakeList()));
+  renderList(decorate(QB.mistakeList()));
+});
+document.getElementById('mk-subj').addEventListener('click', function (e) {
+  var b = e.target.closest('.flt');
+  if (!b) return;
+  fSubj = b.dataset.subj;
+  renderFilters(decorate(QB.mistakeList()));
+  renderList(decorate(QB.mistakeList()));
+});
+document.getElementById('mk-list').addEventListener('click', function (e) {
+  var fold = e.target.closest('[data-fold]');
+  var fix  = e.target.closest('[data-fix]');
+  var del  = e.target.closest('[data-del]');
+
+  if (fix) {
+    var id1 = fix.dataset.fix;
+    var cur = QB.mistakeOf(id1);
+    QB.mistakeFix(id1, !(cur && cur.fixed));
+    renderAll();
+    return;
+  }
+  if (del) {
+    var id2 = del.dataset.del;
+    QB.mistakeRemove(id2);
+    delete opened[id2];
+    renderAll();
+    return;
+  }
+  if (fold) {
+    var id3 = fold.dataset.fold;
+    opened[id3] = !opened[id3];
+    var all = decorate(QB.mistakeList());
+    renderList(all);
+  }
+});
+document.getElementById('mk-clear-flt').addEventListener('click', function () {
+  fSubj = 'all';
+  fState = 'all';
+  renderAll();
+});
+
+/* ?demo：塞几道演示错题（lastAt 往前推 → 立刻能看到「到期」） */
+if (/[?&]demo/.test(location.search)) QB.mistakeSeedDemo();
+
+renderAll();
+</script>
+</body>
+</html>

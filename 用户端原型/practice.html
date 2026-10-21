@@ -1,0 +1,279 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="light">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#F5F6F8">
+<title>每日题目 · 学迹</title>
+<script>document.documentElement.classList.add('js-on');</script>
+<link rel="stylesheet" href="style.css?v=20261021a">
+</head>
+<body data-page="practice">
+
+<div class="app">
+<main class="main">
+
+  <header class="topbar" id="topbar"></header>
+
+  <div class="content">
+
+    <!-- 今日题目 · 进度 -->
+    <section class="hero reveal">
+      <div class="hero-ring" id="q-ring" data-ring="0" role="img" aria-label="今日题目进度 0%">
+        <svg viewBox="0 0 120 120" aria-hidden="true">
+          <circle class="track" cx="60" cy="60" r="50"></circle>
+          <circle class="val"   cx="60" cy="60" r="50"></circle>
+        </svg>
+        <div class="hero-ring-txt">
+          <b id="q-done">0</b><span>/ <span id="q-total">0</span> 组</span>
+        </div>
+      </div>
+
+      <div class="hero-body">
+        <p class="hero-title">今日题目 · 管理端发布</p>
+        <p class="hero-meta" id="q-meta">—</p>
+        <div class="chips" id="q-chips"></div>
+        <div style="margin-top:14px">
+          <a class="btn-brand" id="q-start" href="answer.html">开始做题</a>
+        </div>
+      </div>
+    </section>
+
+    <!-- 四大题型：模板说明 + 筛选 -->
+    <section class="section reveal">
+      <h2 class="section-title">题型 <span class="count">· 九科所有题目都由这 4 个模板拼出来</span></h2>
+
+      <div class="qt-legend">
+        <button class="qt-card" type="button" data-kind="choice">
+          <span class="qtype qtype-choice">选择题</span>
+          <span class="qt-desc">题干 + 选项，点一下作答。含多选与判断。</span>
+          <span class="qt-num" id="qt-choice">0</span>
+        </button>
+        <button class="qt-card" type="button" data-kind="fill_blank">
+          <span class="qtype qtype-fill">填空题</span>
+          <span class="qt-desc">在句子里挖空，答完按数值／同义／逐字比对。</span>
+          <span class="qt-num" id="qt-fill">0</span>
+        </button>
+        <button class="qt-card" type="button" data-kind="short_answer">
+          <span class="qtype qtype-short">简答题</span>
+          <span class="qt-desc">写一段话，按采分点逐条判，告诉你缺哪一点。</span>
+          <span class="qt-num" id="qt-short">0</span>
+        </button>
+        <button class="qt-card" type="button" data-kind="material">
+          <span class="qtype qtype-material">材料题</span>
+          <span class="qt-desc">一段材料 + 若干子题。语文、英语阅读与完形都是它。</span>
+          <span class="qt-num" id="qt-material">0</span>
+        </button>
+      </div>
+
+      <div class="flt-row" id="q-filter" style="margin-top:14px">
+        <button class="flt on" type="button" data-kind="all">全部</button>
+        <button class="flt" type="button" data-kind="choice">选择题</button>
+        <button class="flt" type="button" data-kind="fill_blank">填空题</button>
+        <button class="flt" type="button" data-kind="short_answer">简答题</button>
+        <button class="flt" type="button" data-kind="material">材料题</button>
+      </div>
+    </section>
+
+    <!-- 题目列表 -->
+    <section class="section reveal">
+      <h2 class="section-title">题目列表 <span class="count" id="q-list-count">· 点任意一题进入作答</span></h2>
+      <div class="q-list" id="q-list"><!-- JS 渲染 --></div>
+      <p class="q-empty" id="q-empty" hidden>这个题型今天没有安排题目。</p>
+    </section>
+
+    <!-- 作文不在题目区 -->
+    <section class="section reveal">
+      <h2 class="section-title">写作题 <span class="count">· 单独一类，不混在题目里</span></h2>
+      <a class="q-note" href="essay.html">
+        <span class="qn-ico">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"
+               stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M6.6 3.4h6.9l4.9 4.9v12.3H6.6z"/><path d="M13.3 3.5v5.1h5.1"/><path d="M9.6 13.2h4.8M9.6 16.5h3.2"/>
+          </svg>
+        </span>
+        <span class="qn-txt">
+          <b>作文（含英语书面表达）在「作文」入口</b>
+          <span>判分维度完全不同 —— 不打对错、不给「采分点分」，而是内容 / 结构 / 语言三档点评，所以它不占题目列表，单独一条流程。</span>
+        </span>
+        <span class="qn-go">去作文 ›</span>
+      </a>
+    </section>
+
+  </div>
+</main>
+</div>
+
+<script src="fx.js?v=20261021a"></script>
+<script src="app.js?v=20261021a"></script>
+<script src="qbank.js?v=20261021a"></script>
+<script>
+/* ============================================================
+   每日题目列表
+   数据来自 qbank.js（演示题库），结构对齐《题目模板精简版 v1》：
+   四个模板 = 选择 / 填空 / 简答 / 材料；作文单独在「作文」入口。
+   ============================================================ */
+
+var SUBJ_C = {
+  '语文': 'var(--c-cn)', '数学': 'var(--c-math)', '英语': 'var(--c-en)',
+  '物理': 'var(--c-phy)', '化学': 'var(--c-che)', '生物': 'var(--c-bio)',
+  '历史': 'var(--c-his)', '道法': 'var(--c-pol)', '地理': 'var(--c-geo)'
+};
+
+function starHTML(n) {
+  var s = '';
+  for (var i = 0; i < 3; i++) s += (i < n ? '★' : '<i>★</i>');
+  return '<span class="q-star" title="难度 ' + n + ' 星">' + s + '</span>';
+}
+function subjChip(name) {
+  return '<span class="chip q-subj"><i class="dot" style="background:' +
+         (SUBJ_C[name] || 'var(--brand)') + '"></i>' + name + '</span>';
+}
+function stateChipBlock(st) {
+  if (st.state === 'todo')  return '<span class="q-state todo">未做</span>';
+  if (st.state === 'part')  return '<span class="q-state part">' + st.done + '/' + st.total + '</span>';
+  if (st.state === 'wrong') return '<span class="q-state wrong">有错题</span>';
+  return '<span class="q-state done">已完成</span>';
+}
+function plainText(html) {
+  return String(html || '').replace(/<[^>]*>/g, '')
+    .replace(/\{\{\d+\}\}/g, '＿＿')      /* 列表预览里把空位画成下划线 */
+    .replace(/\s+/g, ' ').trim();
+}
+
+/* ---------- 普通题（选择题 / 填空题 / 简答题：一段题干） ---------- */
+function rowHTML(block) {
+  var st   = QB.state(block);
+  var kind = QB.kind(block);
+  var it   = block.items[0];
+  var stem = plainText(it.stem);
+  if (stem.length > 62) stem = stem.slice(0, 62) + '…';
+
+  return '<a class="q-row' + (st.state === 'done' ? ' is-done' : '') + '" href="answer.html?id=' + block.id + '">' +
+    '<span class="q-no">' + (QB.indexOf(block.id) + 1) + '</span>' +
+    '<div class="q-main">' +
+      '<div class="q-tags">' +
+        '<span class="qtype qtype-' + kind.replace('_answer', '').replace('fill_blank', 'fill') + '">' +
+          QB.typeInfo[kind].label + '</span>' +
+        subjChip(block.subject) +
+        starHTML(block.star) +
+        '<span class="q-pt">' + block.score + ' 分</span>' +
+      '</div>' +
+      '<p class="q-stem">' + stem + '</p>' +
+      '<p class="q-meta">' + block.kp + '</p>' +
+    '</div>' +
+    stateChipBlock(st) +
+  '</a>';
+}
+
+/* ---------- 材料题：一块材料 + 若干子题 ---------- */
+function groupHTML(block) {
+  var st    = QB.state(block);
+  var mix   = QB.mix(block);
+  var order = ['choice', 'fill_blank', 'short_answer'];
+  var chips = block.items.map(function (it, i) {
+    return '<span class="qgi"><b>' + (i + 1) + '</b>' + QB.typeShort(it.type) + '</span>';
+  }).join('');
+
+  return '<a class="q-group' + (st.state === 'done' ? ' is-done' : '') + '" href="answer.html?id=' + block.id + '">' +
+    '<div class="qg-head">' +
+      '<span class="q-no">' + (QB.indexOf(block.id) + 1) + '</span>' +
+      '<div class="q-tags">' +
+        '<span class="qtype qtype-material">材料题</span>' +
+        subjChip(block.subject) +
+        starHTML(block.star) +
+        '<span class="q-pt">' + block.score + ' 分</span>' +
+        (QB.isInline(block) ? '<span class="chip warn">材料里插空 · 完形</span>' : '') +
+      '</div>' +
+      stateChipBlock(st) +
+    '</div>' +
+    '<p class="qg-title">' + block.material.title + '</p>' +
+    '<p class="q-meta">' + (block.material.source || '') + ' · ' + block.items.length + ' 道小题</p>' +
+    '<div class="qg-items">' + chips +
+      '<span class="qg-mix">' + order.filter(function (k) { return mix[k]; })
+        .map(function (k) { return QB.typeShort(k) + ' ' + mix[k]; }).join(' · ') + '</span>' +
+    '</div>' +
+  '</a>';
+}
+
+/* ---------- 渲染 ---------- */
+var filter = 'all';
+
+function render() {
+  var list = QB.bank.filter(function (b) {
+    return filter === 'all' || QB.kind(b) === filter;
+  });
+  document.getElementById('q-list').innerHTML = list.map(function (b) {
+    return QB.kind(b) === 'material' ? groupHTML(b) : rowHTML(b);
+  }).join('');
+  document.getElementById('q-empty').hidden = list.length > 0;
+  document.getElementById('q-list-count').textContent =
+    '· 共 ' + list.length + ' 个题组 · 点任意一题进入作答';
+}
+
+function renderStats() {
+  var ov = QB.overall();
+  document.getElementById('q-done').textContent  = ov.blocksDone;
+  document.getElementById('q-total').textContent = ov.blocks;
+
+  var kinds = { choice: 0, fill_blank: 0, short_answer: 0, material: 0 };
+  QB.bank.forEach(function (b) { kinds[QB.kind(b)]++; });
+
+  document.getElementById('q-meta').textContent =
+    ov.blocks + ' 个题组 · ' + ov.items + ' 道小题 · 覆盖 ' +
+    (function () {
+      var s = {}, n = 0;
+      QB.bank.forEach(function (b) { if (!s[b.subject]) { s[b.subject] = 1; n++; } });
+      return n;
+    })() + ' 科 · 预计 35 分钟';
+
+  document.getElementById('q-chips').innerHTML =
+    '<span class="chip brand">练习模式 · 即时反馈</span>' +
+    '<span class="chip">难度 中等</span>' +
+    '<span class="chip">选择 ' + kinds.choice + ' · 填空 ' + kinds.fill_blank +
+      ' · 简答 ' + kinds.short_answer + ' · 材料 ' + kinds.material + '</span>' +
+    (ov.itemsDone ? '<span class="chip ok">已作答 ' + ov.itemsDone + '/' + ov.items + ' 小题</span>'
+                  : '<span class="chip">还没开始</span>');
+
+  document.getElementById('qt-choice').textContent   = kinds.choice;
+  document.getElementById('qt-fill').textContent     = kinds.fill_blank;
+  document.getElementById('qt-short').textContent    = kinds.short_answer;
+  document.getElementById('qt-material').textContent = kinds.material;
+
+  /* 进度环 */
+  var ring = document.getElementById('q-ring');
+  var pct = ov.blocks ? ov.blocksDone / ov.blocks * 100 : 0;
+  ring.setAttribute('aria-label', '今日题目进度 ' + Math.round(pct) + '%');
+  if (window.FX && FX.ring) FX.ring(ring, pct);
+
+  /* 主按钮：从第一道没做的题开始 */
+  var next = QB.bank.find(function (b) { return QB.state(b).state !== 'done'; }) || QB.bank[0];
+  document.getElementById('q-start').setAttribute('href', 'answer.html?id=' + next.id);
+  document.getElementById('q-start').textContent =
+    ov.blocksDone && ov.blocksDone < ov.blocks ? '继续做题' : (ov.blocksDone ? '重新过一遍' : '开始做题');
+}
+
+document.getElementById('q-filter').addEventListener('click', function (e) {
+  var btn = e.target.closest('.flt');
+  if (!btn) return;
+  filter = btn.dataset.kind;
+  Array.prototype.forEach.call(this.querySelectorAll('.flt'), function (b) {
+    b.classList.toggle('on', b === btn);
+  });
+  render();
+});
+
+/* 点题型卡 = 点对应筛选 */
+document.querySelectorAll('.qt-card').forEach(function (card) {
+  card.addEventListener('click', function () {
+    var k = card.dataset.kind;
+    var target = document.querySelector('.flt[data-kind="' + k + '"]');
+    if (target) target.click();
+  });
+});
+
+renderStats();
+render();
+</script>
+</body>
+</html>

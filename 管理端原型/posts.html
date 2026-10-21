@@ -1,0 +1,203 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="light">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#F5F6F8">
+<title>记录管理 · 学迹管理端</title>
+<link rel="stylesheet" href="style.css?v=20261021c">
+</head>
+<body data-page="posts" data-title="记录管理" data-sub="学生端发的每一条都在这里 · 可见范围与显示状态一目了然">
+
+<div class="app">
+  <aside class="sb" id="sb"></aside>
+  <div class="main">
+    <header class="tb" id="tb"></header>
+    <div class="content">
+
+      <section class="sec">
+        <div class="grid g-4" id="stats"></div>
+      </section>
+
+      <section class="sec">
+        <div class="sec-title">
+          <span>全部记录</span><span class="count" id="cnt"></span>
+          <span class="right">
+            <div class="seg" id="f-st">
+              <button class="on" data-val="all">全部</button>
+              <button data-val="正常">正常</button>
+              <button data-val="已隐藏">已隐藏</button>
+            </div>
+            <div class="seg" id="f-vis" style="margin-left:8px">
+              <button class="on" data-val="all">可见范围</button>
+              <button data-val="公开">公开</button>
+              <button data-val="家人可见">家人可见</button>
+              <button data-val="仅自己">仅自己</button>
+            </div>
+          </span>
+        </div>
+        <div id="cards"></div>
+        <p class="hint">
+          点任意一条记录（或点右侧「详情」）看全文与配图。隐私口径：你可以看到全部内容（含「仅自己」），
+          但学生端<b>不会显示「谁在看」</b>，避免被监视感。看不合适的记录直接隐藏 —— 学生端会提示内容暂不可见，之后随时可以恢复。
+          佳作不在这里设，收录入口在「作文批改」的佳作库（录入范文 / 把学生作文设为佳作）。
+        </p>
+      </section>
+
+    </div>
+  </div>
+</div>
+
+<script src="demo.js?v=20261021c"></script>
+<script src="admin.js?v=20261021c"></script>
+<script>
+(function () {
+  var E = ADMIN.esc, I = ADMIN.icon;
+  var fSt = 'all', fVis = 'all';
+  var students = DB.get('students', []);
+  function stu(id) { return students.filter(function (s) { return s.id === id; })[0] || { name: '?', color: 'c1', initial: '?' }; }
+
+  function render() {
+    var posts = DB.get('posts', []);
+    var rows = posts.filter(function (p) {
+      if (fSt !== 'all' && p.status !== fSt) return false;
+      if (fVis !== 'all' && p.vis !== fVis) return false;
+      return true;
+    }).sort(function (a, b) { return b.at - a.at; });
+
+    var weekNew = posts.filter(function (p) { return p.at >= Date.now() - 7 * 86400000; }).length;
+    document.getElementById('stats').innerHTML = [
+      ['image', '', '记录总数', posts.length + '<small>条</small>', '图文 / 随感 / 学习笔记'],
+      ['eye', 'ok', '公开可见', posts.filter(function (p) { return p.vis === '公开'; }).length + '<small>条</small>', '三档可见范围由学生自己选'],
+      ['clock', '', '本周新增', weekNew + '<small>条</small>', '近 7 天学生自己发的'],
+      ['eyeOff', 'warn', '已隐藏', posts.filter(function (p) { return p.status === '已隐藏'; }).length + '<small>条</small>', '学生端不可见，可恢复']
+    ].map(function (x) {
+      return '<div class="stat"><div class="stat-top"><span class="ico ' + x[1] + '">' + I(x[0]) + '</span>' + x[2] + '</div>' +
+        '<div class="stat-num">' + x[3] + '</div><div class="stat-sub">' + E(x[4]) + '</div></div>';
+    }).join('');
+
+    document.getElementById('cnt').textContent = '· ' + rows.length + ' 条（共 ' + posts.length + '）';
+    document.getElementById('cards').innerHTML = rows.length ? rows.map(function (p) {
+      var s = stu(p.sid);
+      var visChip = p.vis === '公开' ? 'brand' : (p.vis === '家人可见' ? 'ok' : '');
+      return '<div class="card" data-id="' + p.id + '" style="margin-bottom:12px;cursor:pointer">' +
+        '<div style="display:flex;align-items:flex-start;gap:12px;flex-wrap:wrap">' +
+          ADMIN.avatar(s) +
+          '<div style="flex:1;min-width:240px">' +
+            '<div style="display:flex;align-items:center;gap:7px;flex-wrap:wrap">' +
+              '<span style="font-size:13.5px;font-weight:600">' + E(s.name) + '</span>' +
+              '<span class="muted" style="font-size:12px">' + ADMIN.ago(p.at) + '</span>' +
+              '<span class="chip">' + E(p.tag) + '</span>' +
+              '<span class="chip ' + visChip + '">' + I(p.vis === '仅自己' ? 'eyeOff' : 'eye') + E(p.vis) + '</span>' +
+              '<span class="chip ' + (p.status === '已隐藏' ? 'warn' : 'ok') + '">' + E(p.status) + '</span>' +
+            '</div>' +
+            '<div style="font-size:14px;font-weight:600;margin:8px 0 4px">' + E(p.title) + '</div>' +
+            '<div style="font-size:13px;color:var(--text-2);line-height:1.7">' + E(p.text) + '</div>' +
+            '<div class="row-meta" style="margin-top:8px">♥ ' + p.likes + ' · 💬 ' + p.cmts +
+              (p.imgs ? ' · 📷 ' + p.imgs + ' 图' : '') + '</div>' +
+          '</div>' +
+          '<div class="btn-row" style="flex-direction:column;align-items:stretch">' +
+            '<button class="btn btn-sm btn-ghost" data-act="view" data-id="' + p.id + '">' + I('eye') + '详情</button>' +
+            (p.status !== '已隐藏'
+              ? '<button class="btn btn-sm" data-act="hide" data-id="' + p.id + '">' + I('eyeOff') + '隐藏</button>'
+              : '<button class="btn btn-sm" data-act="show" data-id="' + p.id + '">' + I('eye') + '恢复显示</button>') +
+          '</div>' +
+        '</div>' +
+      '</div>';
+    }).join('') : '<div class="card"><div class="empty"><div class="ico">' + I('image') + '</div>' +
+      '<div class="empty-title">没有匹配的记录</div><div class="empty-sub">换一下筛选条件</div></div></div>';
+  }
+
+  /* ---------- 记录详情（点卡片或点「详情」都能开） ---------- */
+  function openPost(p) {
+    var s = stu(p.sid);
+    var visChip = p.vis === '公开' ? 'brand' : (p.vis === '家人可见' ? 'ok' : '');
+    var stChip = p.status === '已隐藏' ? 'warn' : 'ok';
+    var imgs = +p.imgs || 0;
+    var phHTML = '';
+    if (imgs) {
+      var show = Math.min(imgs, 6), cells = '';
+      for (var i = 0; i < show; i++) cells += '<div class="ph">图 ' + (i + 1) + '</div>';
+      if (imgs > show) cells += '<div class="ph ph-more">还有 ' + (imgs - show) + ' 张</div>';
+      phHTML = '<div class="flabel" style="margin-top:16px">配图 · ' + imgs + ' 张</div><div class="ph-grid">' + cells + '</div>' +
+        '<p class="hint" style="margin-top:8px">原型期记录只存了图片数量，正式版这里直接显示学生上传的原图。</p>';
+    }
+
+    ADMIN.drawer({
+      title: '记录详情',
+      body:
+        '<div style="display:flex;align-items:center;gap:11px;margin-bottom:12px">' + ADMIN.avatar(s) +
+          '<div style="flex:1;min-width:0">' +
+            '<div style="font-size:14px;font-weight:600">' + E(p.title) + '</div>' +
+            '<div class="row-meta">' + E(s.name) + ' · ' + E(p.id) + ' · ' + ADMIN.ago(p.at) + '发布</div>' +
+          '</div></div>' +
+        '<div class="chipline" style="margin-bottom:12px">' +
+          '<span class="chip">' + E(p.tag) + '</span>' +
+          '<span class="chip ' + visChip + '">' + I(p.vis === '仅自己' ? 'eyeOff' : 'eye') + E(p.vis) + '</span>' +
+          '<span class="chip ' + stChip + '">' + E(p.status) + '</span>' +
+        '</div>' +
+        '<div class="q-prev" style="line-height:1.95;white-space:pre-wrap">' + E(p.text) + '</div>' +
+        phHTML +
+        '<div class="kv" style="margin-top:16px">' +
+          '<div class="kv-row"><div class="kv-k">点赞 / 评论</div><div class="kv-v">♥ ' + p.likes + ' · 💬 ' + p.cmts + '</div></div>' +
+          '<div class="kv-row"><div class="kv-k">可见范围</div><div class="kv-v">' + E(p.vis) + '（学生自己的选择）</div></div>' +
+          '<div class="kv-row"><div class="kv-k">学生端状态</div><div class="kv-v">' +
+            (p.status === '已隐藏' ? '已不可见，会显示「内容暂不可见」' : '正常显示') + '</div></div>' +
+        '</div>',
+      foot:
+        (p.status !== '已隐藏' ? '<button class="btn" data-x="hide">' + I('eyeOff') + '隐藏这条</button>'
+                               : '<button class="btn btn-ok" data-x="show">' + I('eye') + '恢复显示</button>') +
+        '<button class="btn" data-x="no">关闭</button>',
+      onMount: function (d) {
+        d.querySelector('[data-x="no"]').addEventListener('click', ADMIN.closeDrawer);
+        var h = d.querySelector('[data-x="hide"]');
+        if (h) h.addEventListener('click', function () {
+          p.status = '已隐藏'; DB.set('posts', DB.get('posts', []));
+          ADMIN.closeDrawer(); ADMIN.toast('已隐藏'); render();
+        });
+        var sh = d.querySelector('[data-x="show"]');
+        if (sh) sh.addEventListener('click', function () {
+          p.status = '正常'; DB.set('posts', DB.get('posts', []));
+          ADMIN.closeDrawer(); ADMIN.toast('已恢复显示'); render();
+        });
+      }
+    });
+  }
+
+  document.getElementById('cards').addEventListener('click', function (e) {
+    var b = e.target.closest('button[data-act]');
+    var posts = DB.get('posts', []);
+    var id = b ? b.getAttribute('data-id') : (function () {      /* 点卡片空白处 = 看详情 */
+      var card = e.target.closest('.card[data-id]');
+      return card ? card.getAttribute('data-id') : null;
+    })();
+    if (!id) return;
+    var p = posts.filter(function (x) { return x.id === id; })[0];
+    if (!p) return;
+    var act = b ? b.getAttribute('data-act') : 'view';
+
+    if (act === 'view') { openPost(p); return; }
+
+    if (act === 'hide' || act === 'show') {
+      ADMIN.confirm({
+        title: act === 'hide' ? '隐藏这条记录？' : '恢复显示？', ok: act === 'hide' ? '隐藏' : '恢复',
+        danger: act === 'hide',
+        text: '「' + p.title + '」' + (act === 'hide'
+          ? '将从首页与「我的记录」中隐藏（学生端会提示内容暂不可见）。'
+          : '将重新出现在学生端。'),
+        onOk: function () {
+          p.status = act === 'hide' ? '已隐藏' : '正常';
+          DB.set('posts', posts);
+          ADMIN.toast(act === 'hide' ? '已隐藏' : '已恢复'); render();
+        }
+      });
+    }
+  });
+
+  ADMIN.seg('#f-st', function (v) { fSt = v; render(); });
+  ADMIN.seg('#f-vis', function (v) { fVis = v; render(); });
+  render();
+})();
+</script>
+</body>
+</html>

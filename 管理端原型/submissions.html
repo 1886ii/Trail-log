@@ -1,0 +1,215 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="light">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#F5F6F8">
+<title>作答记录 · 学迹管理端</title>
+<link rel="stylesheet" href="style.css?v=20261021c">
+</head>
+<body data-page="submissions" data-title="作答记录" data-sub="学生每做一道题都记在这 · 掌握度、薄弱点、错题本都由它算出来">
+
+<div class="app">
+  <aside class="sb" id="sb"></aside>
+  <div class="main">
+    <header class="tb" id="tb"></header>
+    <div class="content">
+
+      <section class="sec">
+        <div class="grid g-4" id="stats"></div>
+      </section>
+
+      <section class="sec">
+        <div class="sec-title">
+          <span>作答明细</span><span class="count" id="cnt"></span>
+          <span class="right">
+            <div class="seg" id="f-scope">
+              <button class="on" data-val="cur">当前学生</button>
+              <button data-val="all">全部学生</button>
+            </div>
+            <div class="seg" id="f-range" style="margin-left:8px">
+              <button data-val="1">今日</button>
+              <button class="on" data-val="7">近 7 天</button>
+              <button data-val="30">近 30 天</button>
+              <button data-val="0">全部</button>
+            </div>
+            <div class="seg" id="f-ok" style="margin-left:8px">
+              <button class="on" data-val="all">全部</button>
+              <button data-val="1">答对</button>
+              <button data-val="0">答错</button>
+            </div>
+          </span>
+        </div>
+        <div id="list"></div>
+      </section>
+
+      <p class="hint">
+        这是<b>只读</b>页面 —— 学生做过什么就是什么，家长不能改（改了学情就失真了）。
+        答错的题会自动进「错题本」，答对一次即视为订正。正式版由服务端判分后写入这张表，
+        掌握度、薄弱点、正确率全部由它聚合，不再手填。
+      </p>
+
+    </div>
+  </div>
+</div>
+
+<script src="demo.js?v=20261021c"></script>
+<script src="admin.js?v=20261021c"></script>
+<script>
+(function () {
+  var E = ADMIN.esc, I = ADMIN.icon;
+  var students = DB.get('students', []);
+  var scope = 'cur', days = 7, fOk = 'all';
+
+  function stu(id) {
+    return students.filter(function (s) { return s.id === id; })[0] ||
+           { name: '?', initial: '?', color: 'c1' };
+  }
+  function sid() { return scope === 'cur' ? (ADMIN.currentId() || null) : null; }
+  function plain(h) { return String(h || '').replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim(); }
+  function fmtMs(ms) {
+    if (!ms) return '—';
+    var s = Math.round(ms / 1000);
+    return s < 60 ? s + ' 秒' : Math.floor(s / 60) + ' 分 ' + (s % 60) + ' 秒';
+  }
+  var FROM = { practice: '每日题目', wrong: '错题复习', calc: '计算题' };
+  var OPT = ['A', 'B', 'C', 'D', 'E', 'F'];
+
+  function qOf(id) {
+    return DB.get('qbank', []).filter(function (q) { return q.id === id; })[0] || null;
+  }
+
+  function render() {
+    var all = DB.subsOf(sid());
+    var from = days ? Date.now() - days * 864e5 : 0;
+    var rows = all.filter(function (s) {
+      if (s.at < from) return false;
+      if (fOk !== 'all' && (fOk === '1') !== !!s.ok) return false;
+      return true;
+    });
+    var st = DB.subStat(sid(), days);
+    var mk = DB.mkStat(sid());
+    var today = all.filter(function (s) { return s.at >= new Date().setHours(0, 0, 0, 0); }).length;
+
+    document.getElementById('stats').innerHTML = [
+      ['check2', '', (days ? '近 ' + days + ' 天' : '累计') + '作答',
+        st.n + '<small>道</small>', '今天 ' + today + ' 道 · 共 ' + all.length + ' 道'],
+      ['target', st.right >= 80 ? 'ok' : (st.right < 60 ? 'warn' : ''), '正确率',
+        (st.n ? st.right : '—') + '<small>' + (st.n ? '%' : '') + '</small>',
+        st.n ? '得分 ' + st.score + ' / ' + st.full : '这段时间还没做题'],
+      ['clock', '', '平均用时',
+        (st.avgMs ? fmtMs(st.avgMs) : '—') + '', st.n ? '单题从打开到提交' : '—'],
+      ['alert', mk.open ? 'warn' : 'ok', '待订正错题',
+        mk.open + '<small>道</small>', mk.total ? '错题共 ' + mk.total + ' 道 · 涉及 ' + Object.keys(mk.subjects).length + ' 科' : '没有错题']
+    ].map(function (x) {
+      return '<div class="stat"><div class="stat-top"><span class="ico ' + x[1] + '">' + I(x[0]) + '</span>' + x[2] + '</div>' +
+        '<div class="stat-num">' + x[3] + '</div><div class="stat-sub">' + E(x[4]) + '</div></div>';
+    }).join('');
+
+    document.getElementById('cnt').textContent = '· ' + rows.length + ' 条' +
+      (scope === 'all' ? '（全部学生）' : '（' + stu(ADMIN.currentId()).name + '）');
+
+    document.getElementById('list').innerHTML = rows.length
+      ? '<div class="card" style="padding:0"><table class="tbl"><thead><tr>' +
+        '<th style="width:92px">时间</th>' + (scope === 'all' ? '<th style="width:74px">学生</th>' : '') +
+        '<th style="width:56px">科目</th><th>知识点 / 题干</th>' +
+        '<th style="width:150px">学生答案</th><th style="width:70px">结果</th><th style="width:78px">用时</th>' +
+        '</tr></thead><tbody>' + rows.map(function (s) {
+          var q = qOf(s.qid);
+          var stem = plain(q ? q.stem : '(题目已不在题库)');
+          var ans = String(s.ans == null ? '未作答' : s.ans);
+          return '<tr data-id="' + s.id + '" style="cursor:pointer">' +
+            '<td><div style="font-size:12.5px">' + ADMIN.ago(s.at) + '</div>' +
+              '<div class="t-sub">' + (FROM[s.from] || s.from) + '</div></td>' +
+            (scope === 'all' ? '<td><div style="display:flex;align-items:center;gap:6px">' + ADMIN.avatar(stu(s.sid), 'sm') +
+              '<span style="font-size:12.5px">' + E(stu(s.sid).name) + '</span></div></td>' : '') +
+            '<td><span class="chip brand">' + E(s.subject) + '</span></td>' +
+            '<td><div style="font-size:12.5px;font-weight:600">' + E(s.kp) + '</div>' +
+              '<div class="t-sub" style="max-width:430px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' +
+              E(stem) + '</div></td>' +
+            '<td style="font-size:12.5px">' + E(ans.length > 22 ? ans.slice(0, 22) + '…' : ans) + '</td>' +
+            '<td><span class="chip ' + (s.ok ? 'ok' : 'danger') + '">' +
+              (s.ok ? I('check2') + '对' : I('x') + '错') + '</span>' +
+              '<div class="t-sub">' + s.score + ' / ' + s.full + ' 分</div></td>' +
+            '<td style="font-size:12.5px">' + fmtMs(s.ms) + '</td>' +
+          '</tr>';
+        }).join('') + '</tbody></table></div>'
+      : '<div class="card"><div class="empty"><div class="ico">' + I('check2') + '</div>' +
+        '<div class="empty-title">这段时间没有作答记录</div>' +
+        '<div class="empty-sub">换个时间范围看看，或者学生还没开始做题</div></div></div>';
+  }
+
+  /* ---------- 单题详情 ---------- */
+  function openSub(s) {
+    var q = qOf(s.qid);
+    var st = stu(s.sid);
+    var stemHTML = q ? q.stem : '<span class="muted">（这道题已从题库移除，只留下作答记录）</span>';
+
+    var optHTML = '';
+    if (q && q.options && q.options.length) {
+      var right = (q.answer || '').trim().toUpperCase();
+      var mine = String(s.ans || '').trim().toUpperCase();
+      optHTML = '<div class="flabel" style="margin-top:14px">选项</div>' +
+        q.options.map(function (t, i) {
+          var L = OPT[i];
+          var cls = L === right ? 'ok' : (L === mine && L !== right ? 'danger' : '');
+          return '<div class="card tight" style="margin-bottom:6px' + (cls ? ';border-color:var(--' + cls + ')' : '') + '">' +
+            '<div style="display:flex;align-items:center;gap:8px">' +
+              '<b style="width:16px">' + L + '</b><span style="flex:1;font-size:13px">' + t + '</span>' +
+              (L === right ? '<span class="chip ok">正确答案</span>' : '') +
+              (L === mine && L !== right ? '<span class="chip danger">学生选的</span>' : '') +
+            '</div></div>';
+        }).join('');
+    }
+    var blankHTML = (q && q.blanks && q.blanks.length)
+      ? '<div class="flabel" style="margin-top:14px">填空（空 ' + q.blanks.length + ' 个）</div>' +
+        '<div class="q-prev">' + E(q.blanks.join('；')) + '</div>' : '';
+    var pointHTML = (q && q.points && q.points.length)
+      ? '<div class="flabel" style="margin-top:14px">采分点</div><div class="chipline">' +
+        q.points.map(function (p) { return '<span class="pill">' + E(p.label) + '</span>'; }).join('') + '</div>' : '';
+
+    ADMIN.drawer({
+      title: '作答详情 · ' + s.qid,
+      body:
+        '<div style="display:flex;align-items:center;gap:11px;margin-bottom:12px">' + ADMIN.avatar(st) +
+          '<div style="flex:1;min-width:0">' +
+            '<div style="font-size:14px;font-weight:600">' + E(st.name) + ' · ' + E(s.subject) + '</div>' +
+            '<div class="row-meta">' + E(s.kp) + ' · ' + ADMIN.ago(s.at) + '提交 · 来自' + (FROM[s.from] || s.from) + '</div>' +
+          '</div>' +
+          '<span class="chip ' + (s.ok ? 'ok' : 'danger') + '">' + (s.ok ? '答对' : '答错') + '</span>' +
+        '</div>' +
+        '<div class="flabel">题干</div>' +
+        '<div class="q-prev" style="line-height:1.9">' + stemHTML + '</div>' +
+        optHTML + blankHTML + pointHTML +
+        '<div class="flabel" style="margin-top:16px">作答与判分</div>' +
+        '<div class="kv">' +
+          '<div class="kv-row"><div class="kv-k">学生答案</div><div class="kv-v">' + E(String(s.ans == null ? '未作答' : s.ans)) + '</div></div>' +
+          (q && q.answer ? '<div class="kv-row"><div class="kv-k">正确答案</div><div class="kv-v">' + E(q.answer) + '</div></div>' : '') +
+          '<div class="kv-row"><div class="kv-k">得分</div><div class="kv-v">' + s.score + ' / ' + s.full + ' 分</div></div>' +
+          '<div class="kv-row"><div class="kv-k">用时</div><div class="kv-v">' + fmtMs(s.ms) + '</div></div>' +
+        '</div>' +
+        (q && q.expl ? '<div class="flabel" style="margin-top:16px">解析</div><div class="q-prev" style="line-height:1.9">' + q.expl + '</div>' : '') +
+        (!s.ok ? '<div class="ai-bar" style="background:var(--warn-soft);color:var(--warn);margin-top:16px">' +
+          I('alert') + '<span>这道题已自动收进「错题本」，订正后会标记为已订正。</span></div>' : ''),
+      foot: '<button class="btn" data-x="no">关闭</button>',
+      onMount: function (d) {
+        d.querySelector('[data-x="no"]').addEventListener('click', ADMIN.closeDrawer);
+      }
+    });
+  }
+
+  document.getElementById('list').addEventListener('click', function (e) {
+    var tr = e.target.closest('tr[data-id]');
+    if (!tr) return;
+    var s = DB.subsOf(null).filter(function (x) { return x.id === tr.getAttribute('data-id'); })[0];
+    if (s) openSub(s);
+  });
+
+  ADMIN.seg('#f-scope', function (v) { scope = v; render(); });
+  ADMIN.seg('#f-range', function (v) { days = +v; render(); });
+  ADMIN.seg('#f-ok',    function (v) { fOk = v;   render(); });
+  render();
+})();
+</script>
+</body>
+</html>

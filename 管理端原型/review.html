@@ -1,0 +1,241 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="light">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#F5F6F8">
+<title>审核队列 · 学迹管理端</title>
+<link rel="stylesheet" href="style.css?v=20261021c">
+</head>
+<body data-page="review" data-title="审核队列" data-sub="AI 预筛过的题，低置信的才需要你过一眼">
+
+<div class="app">
+  <aside class="sb" id="sb"></aside>
+  <div class="main">
+    <header class="tb" id="tb"></header>
+    <div class="content">
+
+      <section class="sec">
+        <div class="grid g-3" id="stats"></div>
+      </section>
+
+      <div class="split">
+        <div>
+          <section class="sec">
+            <div class="sec-title">待人工审核 <span class="count" id="cnt"></span></div>
+            <div id="queue"></div>
+          </section>
+        </div>
+
+        <div>
+          <section class="sec">
+            <div class="sec-title">这页的规则</div>
+            <div class="card">
+              <div class="kv">
+                <div class="kv-row"><div class="kv-k">AI 预筛</div><div class="kv-v">
+                  生成时按题干 / 答案 / 解析一致性打置信分；≥ <b id="th"></b> 直接入库（可抽查），低于的进这里。</div></div>
+                <div class="kv-row"><div class="kv-k">你的动作</div><div class="kv-v">
+                  <b>通过</b>：入库可用于发布任务；<b>编辑</b>：改完再过；<b>退回</b>：说明原因，让 AI 重出。</div></div>
+                <div class="kv-row"><div class="kv-k">重复拦截</div><div class="kv-v">
+                  与题库已有题高度相似的，置信分会被压低自动进入这里。</div></div>
+              </div>
+            </div>
+          </section>
+
+          <section class="sec">
+            <div class="sec-title">审核日志 <span class="count">· 最近 8 条</span></div>
+            <div class="card"><div class="timeline" id="logs"></div></div>
+          </section>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+<script src="demo.js?v=20261021c"></script>
+<script src="admin.js?v=20261021c"></script>
+<script>
+(function () {
+  var E = ADMIN.esc, I = ADMIN.icon;
+  var TYPE = { T1: '选择题', T2: '填空题', T3: '简答题', T4: '材料题组' };
+  var st = DB.get('settings', {});
+  document.getElementById('th').textContent = st.autoPass;
+
+  function queue() { return DB.get('qbank', []).filter(function (q) { return q.status === 'pending'; }); }
+
+  function render() {
+    var qs = queue().sort(function (a, b) { return a.conf - b.conf; });   /* 最不确定的排最前 */
+    var all = DB.get('qbank', []);
+    var logs = DB.get('logs', []);
+    var auto = logs.filter(function (l) { return l.act === '自动通过'; }).length;
+    var total = auto + logs.filter(function (l) { return l.act === '通过' || l.act === '退回'; }).length;
+
+    document.getElementById('stats').innerHTML = [
+      ['shield', 'warn', '待人工审核', qs.length + '<small>道</small>', '按置信度从低到高排'],
+      ['sparkle', '', 'AI 直通率', (total ? Math.round(auto / total * 100) : 0) + '<small>%</small>', '置信 ≥ ' + st.autoPass + ' 的自动入库'],
+      ['alert', 'danger', '被退回', all.filter(function (q) { return q.status === 'rejected'; }).length + '<small>道</small>', 'AI 会带着原因重出']
+    ].map(function (x) {
+      return '<div class="stat"><div class="stat-top"><span class="ico ' + x[1] + '">' + I(x[0]) + '</span>' + x[2] + '</div>' +
+        '<div class="stat-num">' + x[3] + '</div><div class="stat-sub">' + x[4] + '</div></div>';
+    }).join('');
+
+    document.getElementById('cnt').textContent = '· ' + qs.length + ' 道 · 置信度从低到高';
+    document.getElementById('queue').innerHTML = qs.length ? qs.map(function (q) { return card(q); }).join('')
+      : '<div class="card"><div class="empty"><div class="ico">' + I('check2') + '</div>' +
+        '<div class="empty-title">队列清空了</div><div class="empty-sub">AI 出的题都已处理完</div></div></div>';
+
+    var lg = DB.get('logs', []).slice(0, 8);
+    document.getElementById('logs').innerHTML = lg.map(function (l, i) {
+      var cls = l.act === '退回' ? 'danger' : (l.act === '自动通过' ? 'ok' : 'brand');
+      return '<div class="tl-item"><div class="tl-dot"><i class="' + cls + '"></i>' +
+        (i < lg.length - 1 ? '<div class="tl-line"></div>' : '') + '</div>' +
+        '<div class="tl-body"><div class="tl-title">' + E(l.who) + ' ' + E(l.act) + ' <code>' + E(l.target) + '</code></div>' +
+        '<div class="tl-meta">' + E(l.note) + ' · ' + ADMIN.ago(l.at) + '</div></div></div>';
+    }).join('') || '<div class="muted">暂无日志</div>';
+  }
+
+  /* ---------- 待审卡片 ---------- */
+  /* 配图：审核时必须看到图才能判断，题干图与子题图都列出来 */
+  function figs(refs) {
+    if (!refs || !refs.length) return '';
+    var srcs = refs.map(function (r) { return ADMIN.imgs.src(r); }).filter(Boolean);
+    if (!srcs.length) return '';
+    return '<div class="q-figs">' + srcs.map(function (s) {
+      return '<img src="' + s + '" alt="题目配图">';
+    }).join('') + '</div>';
+  }
+  function card(q) {
+    var text = q.stem.replace(/<[^>]+>/g, '');
+    var subFigs = (q.subs || []).map(function (s, i) {
+      return figs(s.imgs).replace('<div class="q-figs">',
+        '<div class="q-figs"><span class="q-fig-lb">第 ' + (i + 1) + ' 题配图</span>');
+    }).join('');
+    return '<div class="card" style="margin-bottom:14px">' +
+      '<div class="card-head"><h3><code>' + E(q.id) + '</code> ' + E(q.subject) + ' · ' + q.type + ' ' + TYPE[q.type] + '</h3>' +
+        '<div class="right"><span class="chip ' + (q.conf < 0.65 ? 'danger' : 'warn') + '">置信 ' + q.conf.toFixed(2) + '</span>' +
+        '<span class="chip line">' + E(q.difficulty) + '</span><span class="chip">' + q.score + ' 分</span></div></div>' +
+      '<div class="mark ' + (q.conf < 0.65 ? 'danger' : 'warn') + '" style="margin-bottom:12px">' +
+        '<div style="font-size:13.5px;line-height:1.7">' + E(text.length > 120 ? text.slice(0, 120) + '…' : text) + '</div>' +
+        figs(q.stemImgs) + subFigs + '</div>' +
+      (q.flag ? '<div class="ai-bar" style="background:var(--warn-soft);color:var(--warn);margin-bottom:12px">' +
+        I('alert') + '<span>' + E(q.flag) + '</span></div>' : '') +
+      '<div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center">' +
+        '<button class="btn btn-sm btn-ok" data-act="pass" data-id="' + q.id + '">' + I('check2') + '通过入库</button>' +
+        '<button class="btn btn-sm" data-act="edit" data-id="' + q.id + '">' + I('edit') + '改一改再过</button>' +
+        '<button class="btn btn-sm btn-ghost" data-act="view" data-id="' + q.id + '">' + I('eye') + '完整预览</button>' +
+        '<button class="btn btn-sm btn-danger" data-act="back" data-id="' + q.id + '">' + I('refresh') + '退回重出</button>' +
+        '<span class="row-meta" style="margin-left:auto">' + E(q.by) + ' · ' + ADMIN.ago(q.at) + '</span>' +
+      '</div>' +
+    '</div>';
+  }
+
+  function find(id) { return DB.get('qbank', []).filter(function (x) { return x.id === id; })[0]; }
+
+  function addLog(act, target, note) {
+    var logs = DB.get('logs', []);
+    logs.unshift({ at: Date.now(), who: '我', act: act, target: target, note: note || '' });
+    DB.set('logs', logs);
+  }
+
+  /* ---------- 动作 ---------- */
+  document.getElementById('queue').addEventListener('click', function (e) {
+    var b = e.target.closest('button[data-act]');
+    if (!b) return;
+    var q = find(b.getAttribute('data-id'));
+    if (!q) return;
+    var act = b.getAttribute('data-act');
+
+    if (act === 'pass') {
+      ADMIN.confirm({
+        title: '通过入库？', ok: '通过',
+        text: q.id + ' 将进入题库，可以发布到每日任务。当前置信 ' + q.conf.toFixed(2) + '。',
+        onOk: function () {
+          q.status = 'approved'; DB.set('qbank', DB.get('qbank', []));
+          addLog('通过', q.id, '人工确认采分点与答案');
+          ADMIN.toast('已通过入库'); render();
+        }
+      });
+    }
+    if (act === 'view') { location.href = 'qbank.html?kp=' + encodeURIComponent(q.kp); }
+    if (act === 'edit') {
+      ADMIN.drawer({
+        title: '编辑后通过 · ' + q.id,
+        body: '<div class="form-grid">' +
+          '<div class="field"><label>题干</label><textarea class="ta" id="e-stem">' +
+            E(q.stem.replace(/<[^>]+>/g, '')) + '</textarea>' +
+            ADMIN.imgs.html({ label: '题干配图', hint: '可替换 / 删掉 AI 配错的图' }) + '</div>' +
+          (q.options ? '<div class="field"><label>选项（每行一个，第一行为正确答案）</label><textarea class="ta" id="e-opts">' +
+            q.options.join('\n') + '</textarea></div>' : '') +
+          '<div class="field"><label>解析</label><textarea class="ta" id="e-expl">' + E(q.expl) + '</textarea></div>' +
+          (q.points ? '<div class="field"><label>采分点（每行一个）</label><textarea class="ta" id="e-points">' +
+            q.points.map(function (p) { return p.label; }).join('\n') + '</textarea></div>' : '') +
+          '</div>',
+        foot: '<button class="btn" data-x="no">取消</button><button class="btn btn-ok" data-x="ok">保存并通过</button>',
+        onMount: function (d) {
+          ADMIN.imgs.set(d.querySelector('.imgbox[data-imgs]'), q.stemImgs || []);
+          d.querySelector('[data-x="no"]').addEventListener('click', ADMIN.closeDrawer);
+          d.querySelector('[data-x="ok"]').addEventListener('click', function () {
+            q.stem = d.querySelector('#e-stem').value.trim() || q.stem;
+            var editedIm = ADMIN.imgs.read(d.querySelector('.imgbox[data-imgs]'));
+            if (editedIm.length) q.stemImgs = editedIm; else delete q.stemImgs;
+            if (q.options) {
+              var opts = d.querySelector('#e-opts').value.split('\n').map(function (x) { return x.trim(); }).filter(Boolean);
+              if (opts.length >= 2) q.options = opts;
+            }
+            q.expl = d.querySelector('#e-expl').value.trim() || q.expl;
+            if (q.points) {
+              var pts = d.querySelector('#e-points').value.split('\n').map(function (x) { return x.trim(); }).filter(Boolean);
+              q.points = pts.map(function (label) { return { label: label, k: [] }; });
+            }
+            q.status = 'approved'; q.source = '手动'; q.by = '我 · 编辑后通过';
+            DB.set('qbank', DB.get('qbank', []));
+            addLog('通过', q.id, '编辑后入库');
+            ADMIN.closeDrawer(); ADMIN.toast('已编辑并通过入库'); render();
+          });
+        }
+      });
+    }
+    if (act === 'back') {
+      ADMIN.drawer({
+        title: '退回重出 · ' + q.id,
+        body: '<div class="field"><label>退回原因（AI 重出时会带上）<span class="req">*</span></label>' +
+          '<textarea class="ta" id="r-reason" placeholder="如：与题库已有题目重复 / 采分点与题干不符 / 难度不匹配"></textarea></div>' +
+          '<label class="switch" style="margin-top:6px"><input type="checkbox" id="r-auto" checked>' +
+          '<span class="track"></span><span class="sw-txt">让 AI 立刻按此原因重出一道</span></label>',
+        foot: '<button class="btn" data-x="no">取消</button><button class="btn btn-danger" data-x="ok">退回</button>',
+        onMount: function (d) {
+          d.querySelector('[data-x="no"]').addEventListener('click', ADMIN.closeDrawer);
+          d.querySelector('[data-x="ok"]').addEventListener('click', function () {
+            var reason = d.querySelector('#r-reason').value.trim();
+            if (!reason) { ADMIN.toast('请填写退回原因', 'warn'); return; }
+            q.status = 'rejected'; q.rejectReason = reason; q.rejectedAt = Date.now();
+            DB.set('qbank', DB.get('qbank', []));
+            addLog('退回', q.id, reason);
+            var redo = d.querySelector('#r-auto').checked;
+            ADMIN.closeDrawer(); ADMIN.toast('已退回' + (redo ? '，AI 正在重出' : ''));
+            if (redo) {
+              var list = DB.get('qbank', []);
+              list.unshift({
+                id: 'Q-' + (1100 + Math.floor(Math.random() * 800)),
+                subject: q.subject, type: q.type, kp: q.kp, star: q.star, difficulty: q.difficulty,
+                score: q.score, status: 'pending', conf: +(q.conf + 0.08 > 0.99 ? 0.99 : q.conf + 0.08).toFixed(2),
+                source: 'AI', by: 'AI · 按退回原因重出', at: Date.now(),
+                stem: q.stem.replace(/<[^>]+>/g, '') + '（重出版：已按「' + reason + '」调整）',
+                options: q.options, answer: q.answer, expl: q.expl,
+                points: q.points, used: 0, right: 0, flag: '重出题：请确认已解决「' + reason + '」'
+              });
+              DB.set('qbank', list);
+            }
+            render();
+          });
+        }
+      });
+    }
+  });
+
+  render();
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,1017 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="light">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#F5F6F8">
+<title>AI 中枢 · 学迹管理端</title>
+<link rel="stylesheet" href="style.css?v=20261021c">
+</head>
+<body data-page="ai" data-title="AI 中枢" data-sub="用了多少 · 花在哪 · 换谁的模型">
+
+<div class="app">
+  <aside class="sb" id="sb"></aside>
+  <div class="main">
+    <header class="tb" id="tb"></header>
+    <div class="content">
+
+      <!-- 当前模式 + 紧急暂停 -->
+      <section class="sec">
+        <div class="card ai-mode" id="mode"></div>
+      </section>
+
+      <!-- 今日四张数 -->
+      <section class="sec">
+        <div class="grid g-4" id="kpis"></div>
+      </section>
+
+      <div class="split">
+        <div>
+          <section class="sec">
+            <div class="sec-title">近 14 天调用 <span class="count" id="chart-sub"></span></div>
+            <div class="card">
+              <div class="ai-chart" id="chart"></div>
+              <div class="ai-chart-foot" id="chart-foot"></div>
+            </div>
+          </section>
+
+          <section class="sec">
+            <div class="sec-title">按环节拆分 <span class="count">· 近 14 天 · 花在哪儿一目了然</span></div>
+            <div class="card" style="padding:4px 0">
+              <div class="ai-uses" id="byuse"></div>
+            </div>
+          </section>
+
+          <section class="sec">
+            <div class="sec-title">最近调用 <span class="count">· 最新 18 条</span>
+              <span class="right"><span class="chip line">演示流水</span></span></div>
+            <div class="card" style="padding:0">
+              <div class="tbl-wrap" style="border:0">
+                <table class="tbl compact" id="recent"></table>
+              </div>
+            </div>
+          </section>
+        </div>
+
+        <div>
+          <section class="sec">
+            <div class="sec-title">本月预算</div>
+            <div class="card" id="budget"></div>
+          </section>
+
+          <section class="sec">
+            <div class="sec-title">按模型 <span class="count">· 近 14 天</span></div>
+            <div class="card" id="bymodel"></div>
+          </section>
+        </div>
+      </div>
+
+      <!-- 供应商与密钥 -->
+      <section class="sec">
+        <div class="sec-title">供应商与密钥 <span class="count" id="pv-sub"></span>
+          <span class="right"><button class="btn btn-sm" id="pv-add">+ 新增供应商</button></span>
+        </div>
+        <div class="ai-pvs" id="pvs"></div>
+        <div class="ai-note">
+          <b>密钥放哪儿：</b>原型期和业务数据一样存在本机 <code>xjadmin-db</code>，换设备就没了、也不会外传。
+          正式版由 Spring Boot 服务端 <b>AES-GCM 加密入库</b>，接口只回显尾 4 位，任何列表、日志、导出都不带完整 Key；
+          孩子那端不接触任何密钥，所有调用走服务端代理。
+        </div>
+      </section>
+
+      <!-- 模型分配（切换） -->
+      <section class="sec">
+        <div class="sec-title">模型分配 <span class="count">· 每个环节用哪家哪个模型，这就是「切换」</span>
+          <span class="right"><button class="btn btn-sm btn-ghost" id="route-reset">恢复均衡档</button></span>
+        </div>
+        <div class="card" style="padding:0">
+          <div class="tbl-wrap" style="border:0">
+            <table class="tbl" id="routes"></table>
+          </div>
+          <div class="ai-routes-foot" id="routes-foot"></div>
+        </div>
+      </section>
+
+    </div>
+  </div>
+</div>
+
+<script src="demo.js?v=20261021c"></script>
+<script src="admin.js?v=20261021c"></script>
+<script>
+(function () {
+  var E = ADMIN.esc, I = ADMIN.icon;
+  var SCENES = DB.AI_SCENES, KINDS = DB.AI_KINDS, MODES = DB.AI_MODES;
+  var AI = DB.get('ai', null);
+  if (!AI || !AI.providers) return;
+
+  var revealed = {};          /* 哪几把密钥点开了眼睛（只保存在内存里，刷新即收回） */
+  var snap = JSON.stringify({ routes: AI.routes, mode: AI.mode, modeAt: AI.modeAt });
+
+  /* ---------- 小工具 ---------- */
+  function has(k) { return new RegExp('[?&]' + k + '([=&]|$)').test(location.search); }
+  function save(quiet) { DB.set('ai', AI); if (!quiet) ADMIN.toast('已保存'); }
+  function pvById(id) {
+    var out = null;
+    AI.providers.forEach(function (p) { if (p.id === id) out = p; });
+    return out;
+  }
+  function mdOf(pvId, mid) {
+    var p = pvById(pvId), hit = null;
+    if (p) (p.models || []).forEach(function (m) { if (m.id === mid) hit = m; });
+    return hit;
+  }
+  function sceneOf(id) {
+    var out = null;
+    SCENES.forEach(function (s) { if (s.id === id) out = s; });
+    return out;
+  }
+  function num(n) { return n >= 1000 ? n.toLocaleString('zh-CN') : String(n); }
+  function tok(n) {
+    return n >= 1e6 ? (n / 1e6).toFixed(2) + 'M' : n >= 1e3 ? (n / 1e3).toFixed(1) + 'K' : String(Math.round(n));
+  }
+  function yuan(n) { return '¥' + (Math.round(n * 100) / 100).toFixed(2); }
+  function perCall(s, pvId, mid) {
+    var m = mdOf(pvId, mid);
+    if (!m) return 0;
+    return (s.tin * m.pin + s.tout * m.pout) / 1000;
+  }
+  function maskKey(k) {
+    k = String(k || '');
+    if (k.length <= 8) return '••••';
+    return k.slice(0, 2) + '••••••••' + k.slice(-4);
+  }
+  function mainKey(p) {
+    var on = (p.keys || []).filter(function (k) { return k.on; });
+    var p1 = null;
+    on.forEach(function (k) { if (k.primary) p1 = k; });
+    return p1 || on[0] || (p.keys || [])[0] || null;
+  }
+  function kindOf(id) {
+    var hit = KINDS[0];
+    KINDS.forEach(function (k) { if (k.id === id) hit = k; });
+    return hit;
+  }
+  function agoDay(at) {
+    if (!at) return '从未';
+    var d = Math.floor((Date.now() - at) / 86400000);
+    if (d <= 0) return '今天';
+    if (d === 1) return '昨天';
+    return d + ' 天前';
+  }
+  function agoMin(at) {
+    if (!at) return '从未使用';
+    var m = Math.round((Date.now() - at) / 60000);
+    if (m < 1) return '刚刚';
+    if (m < 60) return m + ' 分钟前';
+    var h = Math.round(m / 60);
+    if (h < 24) return h + ' 小时前';
+    return Math.round(h / 24) + ' 天前';
+  }
+  function spendNow() {
+    var s = AI.usage.days.reduce(function (n, d) { return n + d.cost; }, 0);
+    return AI.budget.spent0 + s;
+  }
+  function estMonth() {
+    var per = 30 / (AI.usage.span || 14), sum = 0;
+    SCENES.forEach(function (s) {
+      var u = AI.usage.byUse[s.id], r = AI.routes[s.id];
+      if (!u || !r) return;
+      sum += perCall(s, r.pv, r.model) * u.calls * per;
+    });
+    return sum;
+  }
+  function pvUsage(pvId) {
+    var calls = 0, tk = 0, cost = 0;
+    SCENES.forEach(function (s) {
+      var r = AI.routes[s.id], u = AI.usage.byUse[s.id];
+      if (!r || r.pv !== pvId || !u) return;
+      calls += u.calls; tk += u.tin + u.tout; cost += u.cost;
+    });
+    return { calls: calls, tok: tk, cost: cost };
+  }
+
+  /* ============================================================
+     1. 当前模式
+     ============================================================ */
+  function renderMode() {
+    var m = MODES[AI.mode] || { label: '自定义', desc: '按环节单独调过，不再跟随三档预设', est: '按环节各自计价' };
+    var est = estMonth(), bud = AI.budget.month;
+    var over = est > bud;
+    var today = AI.usage.days[AI.usage.days.length - 1];
+    var fails = AI.usage.recent.filter(function (r) { return r.status === 'fail' || r.status === 'slow'; }).length;
+
+    document.getElementById('mode').className = 'card ai-mode' + (AI.paused ? ' is-paused' : '');
+    document.getElementById('mode').innerHTML =
+      '<div class="ai-mode-main">' +
+        '<span class="ai-mode-ico">' + I('sparkle') + '</span>' +
+        '<div class="ai-mode-txt">' +
+          '<div class="ai-mode-k">工作模式' + (AI.paused ? '<span class="chip danger">已暂停</span>' : '') + '</div>' +
+          '<div class="ai-mode-h"><b>' + E(m.label) + '</b><span class="ai-mode-desc">' + E(m.desc) + '</span></div>' +
+          '<div class="ai-mode-meta">' +
+            '<span>预计本月 <b class="' + (over ? 'down' : '') + '">' + yuan(est) + '</b>' +
+              (over ? '（超预算 ' + yuan(est - bud) + '）' : '（预算 ' + yuan(bud) + '）') + '</span>' +
+            '<i>·</i><span>今日 ' + num(today.calls) + ' 次</span>' +
+            '<i>·</i><span>' + (fails ? fails + ' 次降级 / 失败' : '没有失败') + '</span>' +
+            '<i>·</i><span>上次调整 ' + agoDay(AI.modeAt) + '</span>' +
+          '</div>' +
+        '</div>' +
+        '<div class="ai-mode-r">' +
+          '<div class="seg" id="mode-seg">' +
+            ['save', 'balanced', 'best'].map(function (k) {
+              return '<button type="button" data-mode="' + k + '" class="' + (AI.mode === k ? 'on' : '') + '">' + MODES[k].label + '</button>';
+            }).join('') +
+          '</div>' +
+          '<div class="ai-mode-est">' + E(m.est) + '</div>' +
+        '</div>' +
+      '</div>' +
+      '<div class="ai-mode-foot">' +
+        '<label class="switch"><input type="checkbox" id="pause"' + (AI.paused ? ' checked' : '') + '>' +
+          '<span class="track"></span><span class="sw-txt">暂停所有 AI 调用</span></label>' +
+        '<span class="ai-mode-hint">' + (AI.paused
+          ? '已暂停：出题退回手工录入，批改与讲解排队等恢复 —— 学生端不会报错，只是没有新内容'
+          : '暂停开关用于「不想再花钱」的极端情况：不会删任何数据，恢复后接着跑') + '</span>' +
+      '</div>';
+
+    document.querySelector('#mode-seg').addEventListener('click', function (e) {
+      var b = e.target.closest('button[data-mode]');
+      if (!b) return;
+      applyMode(b.getAttribute('data-mode'));
+    });
+    document.getElementById('pause').addEventListener('change', function () {
+      AI.paused = this.checked; save(true);
+      ADMIN.toast(AI.paused ? '已暂停所有 AI 调用' : '已恢复 AI 调用');
+      renderMode();
+    });
+  }
+
+  function applyMode(key, quiet) {
+    var m = MODES[key];
+    if (!m) return;
+    var next = {}, missed = 0;
+    Object.keys(m.routes).forEach(function (sc) {
+      var pair = m.routes[sc];
+      if (mdOf(pair[0], pair[1])) next[sc] = { pv: pair[0], model: pair[1] };
+      else if (AI.routes[sc]) { next[sc] = AI.routes[sc]; missed++; }
+    });
+    AI.routes = next;
+    AI.mode = key;
+    AI.modeAt = Date.now();
+    save(!!quiet);
+    renderMode(); renderRoutes(); renderKpis();
+    if (!quiet) ADMIN.toast('已切到「' + m.label + '」· 整张路由表已更新');
+    if (missed) ADMIN.toast(missed + ' 个环节的预设模型不存在，保持了原样');
+  }
+
+  /* ============================================================
+     2. 今日四张数
+     ============================================================ */
+  function renderKpis() {
+    var ds = AI.usage.days, today = ds[ds.length - 1], prev = ds[ds.length - 2] || today;
+    var dPct = prev.calls ? Math.round((today.calls - prev.calls) / prev.calls * 100) : 0;
+    var rate = today.calls ? (today.calls - today.fail) / today.calls * 100 : 100;
+    var spent = spendNow(), bud = AI.budget.month;
+    var pct = Math.round(spent / bud * 100);
+
+    document.getElementById('kpis').innerHTML = [
+      '<div class="stat"><div class="stat-top"><span class="ico">' + I('chart') + '</span>今日调用</div>' +
+        '<div class="stat-num">' + num(today.calls) + '<small>次</small></div>' +
+        '<div class="stat-sub">较昨日 <b class="' + (dPct < 0 ? 'down' : '') + '">' + (dPct > 0 ? '+' : '') + dPct + '%</b> · ' +
+        today.fail + ' 次失败</div></div>',
+
+      '<div class="stat"><div class="stat-top"><span class="ico">' + I('db') + '</span>今日 tokens</div>' +
+        '<div class="stat-num">' + tok(today.tin + today.tout) + '</div>' +
+        '<div class="stat-sub">输入 ' + tok(today.tin) + ' · 输出 ' + tok(today.tout) + '</div></div>',
+
+      '<div class="stat"><div class="stat-top"><span class="ico warn">' + I('target') + '</span>今日花费</div>' +
+        '<div class="stat-num">' + yuan(today.cost) + '</div>' +
+        '<div class="stat-sub">本月 ' + yuan(spent) + ' / ' + yuan(bud) + ' · ' + pct + '%</div></div>',
+
+      '<div class="stat"><div class="stat-top"><span class="ico ' + (rate >= 99 ? 'ok' : 'danger') + '">' + I('check2') + '</span>成功率</div>' +
+        '<div class="stat-num">' + rate.toFixed(1) + '<small>%</small></div>' +
+        '<div class="stat-sub">平均 ' + (today.avgMs / 1000).toFixed(1) + ' 秒 · 含重试</div></div>'
+    ].join('');
+  }
+
+  /* ============================================================
+     3. 近 14 天柱状
+     ============================================================ */
+  function renderChart() {
+    var ds = AI.usage.days;
+    var max = Math.max.apply(null, ds.map(function (d) { return d.calls; }).concat([1]));
+    var totalCalls = ds.reduce(function (n, d) { return n + d.calls; }, 0);
+    var totalTok = ds.reduce(function (n, d) { return n + d.tin + d.tout; }, 0);
+    var totalCost = ds.reduce(function (n, d) { return n + d.cost; }, 0);
+    var totalFail = ds.reduce(function (n, d) { return n + d.fail; }, 0);
+
+    document.getElementById('chart-sub').textContent = '· 每天柱高是调用量，红色是失败的部分';
+    document.getElementById('chart').innerHTML = ds.map(function (d) {
+      var h = Math.max(2, Math.round(d.calls / max * 100));
+      var fh = d.calls ? Math.max(d.fail ? 3 : 0, Math.round(d.fail / d.calls * 100)) : 0;
+      return '<div class="ai-col" title="' + d.d + ' · ' + num(d.calls) + ' 次 · ' + tok(d.tin + d.tout) + ' tokens · ' + yuan(d.cost) + '">' +
+        '<div class="ai-col-n">' + (d.calls >= 1000 ? (d.calls / 1000).toFixed(1) + 'k' : d.calls) + '</div>' +
+        '<div class="ai-col-track"><div class="ai-cbar" style="height:' + h + '%">' +
+          (fh ? '<i class="ai-cbar-fail" style="height:' + fh + '%"></i>' : '') +
+        '</div></div>' +
+        '<div class="ai-col-lbl">' + d.d + '</div>' +
+      '</div>';
+    }).join('');
+
+    document.getElementById('chart-foot').innerHTML =
+      '<div class="ai-cf-item"><span>总调用</span><b>' + num(totalCalls) + '</b></div>' +
+      '<div class="ai-cf-item"><span>总 tokens</span><b>' + tok(totalTok) + '</b></div>' +
+      '<div class="ai-cf-item"><span>总花费</span><b>' + yuan(totalCost) + '</b></div>' +
+      '<div class="ai-cf-item"><span>失败</span><b>' + totalFail + ' 次 · ' + (totalFail / totalCalls * 100).toFixed(1) + '%</b></div>' +
+      '<div class="ai-cf-legend"><i class="ok"></i>成功<i class="bad"></i>失败/超时</div>';
+  }
+
+  /* ============================================================
+     4. 按环节
+     ============================================================ */
+  function renderByUse() {
+    var maxC = Math.max.apply(null, SCENES.map(function (s) {
+      return (AI.usage.byUse[s.id] || {}).calls || 0;
+    }).concat([1]));
+    document.getElementById('byuse').innerHTML = SCENES.map(function (s) {
+      var u = AI.usage.byUse[s.id] || { calls: 0, tin: 0, tout: 0, cost: 0, fail: 0, avgMs: 0 };
+      var r = AI.routes[s.id] || {};
+      var m = mdOf(r.pv, r.model);
+      var p = pvById(r.pv);
+      var rate = u.calls ? (u.calls - u.fail) / u.calls * 100 : 100;
+      var cls = rate >= 99 ? 'ok' : rate >= 96 ? '' : 'warn';
+      return '<div class="ai-use">' +
+        '<div class="ai-use-ico">' + I(s.icon) + '</div>' +
+        '<div class="ai-use-main">' +
+          '<div class="ai-use-top"><span class="ai-use-name">' + E(s.name) + '</span>' +
+            '<span class="ai-use-model">' + E((p ? p.name : '—') + ' · ' + (r.model || '未分配')) +
+            (m && m.vision ? '<span class="chip line">看图</span>' : '') + '</span>' +
+            '<span class="ai-use-n">' + num(u.calls) + ' 次</span></div>' +
+          '<div class="ai-use-bar"><i class="' + cls + '" style="width:' + Math.round(u.calls / maxC * 100) + '%"></i></div>' +
+          '<div class="ai-use-meta">' + tok(u.tin + u.tout) + ' tokens · ' + yuan(u.cost) +
+            ' · 成功 ' + rate.toFixed(1) + '% · 均 ' + ((u.avgMs || 0) / 1000).toFixed(1) + 's</div>' +
+        '</div>' +
+      '</div>';
+    }).join('');
+  }
+
+  /* ============================================================
+     5. 最近调用
+     ============================================================ */
+  var ST_LABEL = { ok: ['成功', 'ok'], fallback: ['降级', 'warn'], fail: ['失败', 'danger'], slow: ['超时重试', 'warn'] };
+  function renderRecent() {
+    var rows = AI.usage.recent.map(function (r) {
+      var s = sceneOf(r.scene) || { name: r.scene };
+      var p = pvById(r.pv);
+      var st = ST_LABEL[r.status] || ST_LABEL.ok;
+      var dt = new Date(r.at);
+      var hh = ('0' + dt.getHours()).slice(-2) + ':' + ('0' + dt.getMinutes()).slice(-2);
+      return '<tr>' +
+        '<td><div class="t-main" style="font-weight:500">' + hh + '</div>' +
+          '<div class="t-sub">' + agoMin(r.at) + '</div></td>' +
+        '<td><span class="t-main">' + E(s.name) + '</span></td>' +
+        '<td><span class="ai-md">' + E(p ? p.name : '—') + '</span><div class="t-sub">' + E(r.model) + '</div></td>' +
+        '<td class="num">' + tok(r.tin) + ' <span class="muted">/</span> ' + tok(r.tout) + '</td>' +
+        '<td class="num">' + (r.ms ? (r.ms / 1000).toFixed(1) + 's' : '—') + '</td>' +
+        '<td class="num">' + yuan(r.cost) + '</td>' +
+        '<td><span class="chip ' + st[1] + '">' + st[0] + '</span></td>' +
+      '</tr>';
+    }).join('');
+    document.getElementById('recent').innerHTML =
+      '<thead><tr><th>时间</th><th>环节</th><th>模型</th><th class="num">入 / 出 tokens</th>' +
+      '<th class="num">耗时</th><th class="num">花费</th><th>结果</th></tr></thead><tbody>' + rows + '</tbody>';
+  }
+
+  /* ============================================================
+     6. 预算
+     ============================================================ */
+  var OVER = { stop: '停止所有 AI 调用', essay: '只保留作文批改', downgrade: '自动降档到便宜模型' };
+  function renderBudget() {
+    var spent = spendNow(), bud = AI.budget.month, pct = Math.round(spent / bud * 100);
+    var today = AI.usage.days[AI.usage.days.length - 1];
+    var dayN = new Date().getDate();
+    var pace = spent / dayN * 30;
+    var cls = pct >= 100 ? 'danger' : pct >= 80 ? 'warn' : '';
+    document.getElementById('budget').innerHTML =
+      '<div class="ai-bud-top">' +
+        '<div><div class="ai-bud-n">' + yuan(spent) + '</div>' +
+        '<div class="ai-bud-sub">本月已用 · 预算 ' + yuan(bud) + '</div></div>' +
+        '<span class="chip ' + (cls || 'ok') + '">' + pct + '%</span>' +
+      '</div>' +
+      '<div class="bar" style="margin-top:12px"><i class="' + cls + '" style="--w:' + Math.min(100, pct) + '%"></i></div>' +
+      '<div class="ai-bud-rows">' +
+        '<div><span>剩余</span><b>' + yuan(Math.max(0, bud - spent)) + '</b></div>' +
+        '<div><span>按这个速度到月底</span><b class="' + (pace > bud ? 'down' : '') + '">' + yuan(pace) + '</b></div>' +
+        '<div><span>今天用了</span><b>' + yuan(today.cost) + '</b></div>' +
+      '</div>' +
+      '<div class="ai-bud-sep"></div>' +
+      '<div class="field"><label>月度预算（元）</label>' +
+        '<input class="inp" type="number" min="0" step="10" id="bud-month" value="' + bud + '"></div>' +
+      '<label class="switch" style="margin-top:12px"><input type="checkbox" id="bud-alert"' + (AI.budget.alertOn ? ' checked' : '') + '>' +
+        '<span class="track"></span><span class="sw-txt">用到 ' + Math.round(AI.budget.alertAt * 100) + '% 时提醒我</span></label>' +
+      '<div class="field" style="margin-top:12px"><label>超额后怎么办</label>' +
+        '<select class="sel" id="bud-over">' +
+          Object.keys(OVER).map(function (k) {
+            return '<option value="' + k + '"' + (AI.budget.over === k ? ' selected' : '') + '>' + OVER[k] + '</option>';
+          }).join('') +
+        '</select>' +
+        '<div class="hint">' + (AI.budget.over === 'stop'
+          ? '到额度直接停：最省钱，但孩子那边会看到「AI 暂时不可用」'
+          : AI.budget.over === 'essay'
+          ? '作文批改保留，其余环节停掉：批改是最难人工替代的'
+          : '自动切到便宜模型：还能用，质量降一点 —— 推荐') + '</div></div>';
+
+    document.getElementById('bud-month').addEventListener('change', function () {
+      var v = Math.max(0, +this.value || 0);
+      if (!v) { ADMIN.toast('预算不能为 0'); this.value = bud; return; }
+      AI.budget.month = v; save(true); ADMIN.toast('月度预算改为 ' + yuan(v));
+      renderBudget(); renderMode(); renderKpis();
+    });
+    document.getElementById('bud-alert').addEventListener('change', function () {
+      AI.budget.alertOn = this.checked; save(true); ADMIN.toast('已保存');
+    });
+    document.getElementById('bud-over').addEventListener('change', function () {
+      AI.budget.over = this.value; save(true); renderBudget(); ADMIN.toast('超额策略已保存');
+    });
+  }
+
+  /* ============================================================
+     7. 按模型
+     ============================================================ */
+  function renderByModel() {
+    var list = Object.keys(AI.usage.byModel).map(function (k) {
+      return { name: k, v: AI.usage.byModel[k] };
+    }).sort(function (a, b) { return b.v.cost - a.v.cost; });
+    var max = Math.max.apply(null, list.map(function (x) { return x.v.cost; }).concat([0.01]));
+    var total = list.reduce(function (n, x) { return n + x.v.cost; }, 0) || 1;
+    document.getElementById('bymodel').innerHTML = list.map(function (x) {
+      return '<div class="ai-mdl">' +
+        '<div class="ai-mdl-top"><span class="ai-mdl-name">' + E(x.name) + '</span>' +
+          '<span class="ai-mdl-cost">' + yuan(x.v.cost) + '</span></div>' +
+        '<div class="ai-mdl-bar"><i style="width:' + Math.round(x.v.cost / max * 100) + '%"></i></div>' +
+        '<div class="ai-mdl-meta">' + num(x.v.calls) + ' 次 · ' + tok(x.v.tin + x.v.tout) + ' tokens · 占 ' +
+          Math.round(x.v.cost / total * 100) + '%</div>' +
+      '</div>';
+    }).join('') || '<div class="muted">暂无数据</div>';
+  }
+
+  /* ============================================================
+     8. 供应商卡片
+     ============================================================ */
+  function renderProviders() {
+    document.getElementById('pv-sub').textContent = '· ' + AI.providers.filter(function (p) { return p.enabled; }).length +
+      ' / ' + AI.providers.length + ' 家已启用';
+    document.getElementById('pvs').innerHTML = AI.providers.map(function (p) {
+      var k = mainKey(p);
+      var u = pvUsage(p.id);
+      var kOn = (p.keys || []).filter(function (x) { return x.on; }).length;
+      var st = p.status === 'ok' ? ['ok', '验证通过'] : p.status === 'fail' ? ['danger', '连接失败'] : ['', '未验证'];
+      var shown = k ? (revealed[k.id] ? k.key : maskKey(k.key)) : '未配置';
+      return '<div class="ai-pv' + (p.enabled ? '' : ' is-off') + '" data-pv="' + E(p.id) + '">' +
+        '<div class="ai-pv-head">' +
+          '<span class="ai-pv-logo">' + E(p.name.charAt(0)) + '</span>' +
+          '<div class="ai-pv-title"><div class="ai-pv-name">' + E(p.name) + '</div>' +
+            '<div class="ai-pv-kind">' + E(kindOf(p.kind).name) + '</div></div>' +
+          '<span class="chip ' + st[0] + '">' + st[1] + '</span>' +
+        '</div>' +
+        '<div class="ai-pv-kv">' +
+          '<div><span>接口</span><code title="' + E(p.base) + '">' + E(p.base.replace(/^https?:\/\//, '')) + '</code></div>' +
+          '<div><span>密钥</span><code class="ai-key-mask">' + E(shown) + '</code>' +
+            '<button class="ai-mini" data-act="eye" data-pv="' + E(p.id) + '" title="' + (k && revealed[k.id] ? '隐藏' : '显示完整密钥') + '"' +
+              (k ? '' : ' disabled') + '>' + I(k && revealed[k.id] ? 'eyeOff' : 'eye') + '</button>' +
+            '<button class="ai-mini" data-act="copy" data-pv="' + E(p.id) + '" title="复制密钥"' + (k ? '' : ' disabled') + '>' + I('copy') + '</button>' +
+          '</div>' +
+          '<div><span>模型</span><em>' + E((p.models || []).map(function (m) { return m.id; }).slice(0, 3).join(' · ') || '—') +
+            ((p.models || []).length > 3 ? ' 等 ' + p.models.length + ' 个' : '') + '</em></div>' +
+          '<div><span>近 14 天</span><em>' + (u.calls ? num(u.calls) + ' 次 · ' + tok(u.tok) + ' tokens · ' + yuan(u.cost) : '没用过') + '</em></div>' +
+        '</div>' +
+        (p.note ? '<div class="ai-pv-note">' + E(p.note) + '</div>' : '') +
+        '<div class="ai-pv-foot">' +
+          '<label class="switch"><input type="checkbox" data-act="on" data-pv="' + E(p.id) + '"' + (p.enabled ? ' checked' : '') + '>' +
+            '<span class="track"></span><span class="sw-txt">启用</span></label>' +
+          '<span class="ai-pv-keys" data-act="keys" data-pv="' + E(p.id) + '">密钥 ' + (p.keys || []).length +
+            (kOn ? '（可用 ' + kOn + '）' : '（全停）') + '</span>' +
+          '<div class="ai-pv-acts">' +
+            '<button class="btn btn-sm btn-ghost" data-act="test" data-pv="' + E(p.id) + '">' +
+              (p.status === 'testing' ? '测试中…' : '测试连接') + '</button>' +
+            '<button class="btn btn-sm btn-ghost" data-act="edit" data-pv="' + E(p.id) + '">编辑</button>' +
+            '<button class="btn btn-sm btn-ghost" data-act="del" data-pv="' + E(p.id) + '">删除</button>' +
+          '</div>' +
+        '</div>' +
+      '</div>';
+    }).join('');
+  }
+
+  document.getElementById('pvs').addEventListener('click', function (e) {
+    var btn = e.target.closest('[data-act]');
+    if (!btn) return;
+    var id = btn.getAttribute('data-pv'), p = pvById(id);
+    if (!p) return;
+    var act = btn.getAttribute('data-act');
+    if (act === 'eye') {
+      var k = mainKey(p);
+      if (!k) return;
+      revealed[k.id] = !revealed[k.id];
+      renderProviders();
+    } else if (act === 'copy') {
+      var kk = mainKey(p);
+      if (kk) ADMIN.copy(kk.key);
+    } else if (act === 'keys') {
+      keysDrawer(id);
+    } else if (act === 'test') {
+      testPv(id);
+    } else if (act === 'edit') {
+      pvDrawer(id);
+    } else if (act === 'del') {
+      delPv(id);
+    }
+  });
+  document.getElementById('pvs').addEventListener('change', function (e) {
+    var el = e.target.closest('[data-act="on"]');
+    if (!el) return;
+    var p = pvById(el.getAttribute('data-pv'));
+    if (!p) return;
+    p.enabled = el.checked;
+    save(true);
+    ADMIN.toast(p.enabled ? p.name + ' 已启用' : p.name + ' 已停用，用到它的环节会走兜底');
+    renderProviders(); renderRoutes();
+  });
+
+  function testPv(id) {
+    var p = pvById(id);
+    p.status = 'testing';
+    renderProviders();
+    setTimeout(function () {
+      var ok = p.enabled && p.base.indexOf('<') < 0 && /^https?:\/\//.test(p.base) && !!mainKey(p);
+      p.status = ok ? 'ok' : 'fail';
+      p.checkedAt = Date.now();
+      p.latency = ok ? 420 + Math.round(Math.random() * 780) : 0;
+      save(true);
+      ADMIN.toast(ok ? p.name + ' 连接正常 · ' + p.latency + 'ms' : p.name + ' 连接失败：检查地址与密钥');
+      renderProviders();
+    }, 1100);
+  }
+
+  function delPv(id) {
+    var p = pvById(id);
+    var used = SCENES.filter(function (s) { return AI.routes[s.id] && AI.routes[s.id].pv === id; });
+    if (used.length) {
+      ADMIN.modal({
+        title: '先把这个供应商的活挪走',
+        body: '<p style="font-size:13.5px;line-height:1.8">「' + E(p.name) + '」还在给下面 ' + used.length +
+          ' 个环节供货：</p><div class="ai-chips" style="margin-top:10px">' +
+          used.map(function (s) { return '<span class="chip">' + E(s.name) + '</span>'; }).join('') +
+          '</div><p class="hint" style="margin-top:12px">去下面的「模型分配」把它们换成别的模型，再回来删。</p>',        foot: '<button class="btn" data-x="ok">知道了</button>',
+        onMount: function (m) {
+          m.querySelector('[data-x="ok"]').addEventListener('click', ADMIN.closeModal);
+        }
+      });
+      return;
+    }
+    ADMIN.confirm({
+      title: '删除「' + p.name + '」？', danger: true, ok: '删除',
+      text: '接口地址、' + (p.keys || []).length + ' 把密钥、' + (p.models || []).length + ' 个模型价目都会一起清掉。',
+      note: '历史用量统计不会变 —— 那是已经发生的账。',
+      onOk: function () {
+        AI.providers = AI.providers.filter(function (x) { return x.id !== id; });
+        if (AI.fallback === id) AI.fallback = (AI.providers[0] || {}).id || '';
+        save(true); ADMIN.toast('已删除'); renderProviders(); renderRoutes(); renderKpis();
+      }
+    });
+  }
+
+  /* ============================================================
+     9. 供应商新增 / 编辑抽屉
+     ============================================================ */
+  function pvDrawer(id) {
+    var p = id ? pvById(id) : null;
+    var isNew = !p;
+    var d = p || { name: '', kind: 'deepseek', base: kindOf('deepseek').base, models: [], enabled: true, note: '', timeout: 60, retry: 2, concurrency: 3 };
+    var modelText = (d.models || []).map(function (m) {
+      return m.id + (m.pin || m.pout ? ' | ' + m.pin + ' | ' + m.pout : '') + (m.vision ? ' | vision' : '');
+    }).join('\n');
+
+    ADMIN.drawer({
+      title: isNew ? '新增供应商' : '编辑 · ' + d.name,
+      wide: true,
+      body:
+        '<div class="form-grid two">' +
+          '<div class="field"><label class="req">显示名称</label>' +
+            '<input class="inp" id="pv-name" value="' + E(d.name) + '" placeholder="例如：DeepSeek 主账号"></div>' +
+          '<div class="field"><label>类型</label><select class="sel" id="pv-kind">' +
+            KINDS.map(function (k) {
+              return '<option value="' + k.id + '"' + (d.kind === k.id ? ' selected' : '') + '>' + E(k.name) + '</option>';
+            }).join('') +
+          '</select><div class="hint" id="pv-kind-h">' + E(kindOf(d.kind).hint) + '</div></div>' +
+        '</div>' +
+        '<div class="field"><label class="req">接口地址 Base URL</label>' +
+          '<input class="inp" id="pv-base" value="' + E(d.base) + '" placeholder="https://...">' +
+          '<div class="hint">结尾带不带 <code>/v1</code> 看服务商文档；换类型会自动填默认地址</div></div>' +
+        (isNew ?
+          '<div class="field"><label>主密钥 API Key</label>' +
+            '<input class="inp" id="pv-key" type="password" placeholder="sk-..." autocomplete="off">' +
+            '<div class="hint">本地模型（Ollama）可以随便填；密钥只存在本机，之后在卡片的「密钥」里还能再加备用</div></div>'
+          : '<div class="ai-form-note">密钥不在这里改 —— 卡片下方「密钥 ' + (d.keys || []).length + '」里可以加备用、切换主密钥、单独停用。</div>') +
+        '<div class="field"><label>模型清单</label>' +
+          '<textarea class="ta" id="pv-models" rows="5" spellcheck="false" placeholder="deepseek-chat | 0.002 | 0.008">' + E(modelText) + '</textarea>' +
+          '<div class="hint">每行一个：<code>模型 ID | 输入价 | 输出价</code>（元 / 千 tokens，留空按 0 算）。' +
+          '末位加 <code>| vision</code> 表示能看图。价格只用于成本估算，不影响调用。</div></div>' +
+        '<div class="form-grid three">' +
+          '<div class="field"><label>超时（秒）</label><input class="inp" id="pv-timeout" type="number" min="5" max="300" value="' + d.timeout + '"></div>' +
+          '<div class="field"><label>失败重试</label><input class="inp" id="pv-retry" type="number" min="0" max="5" value="' + d.retry + '"></div>' +
+          '<div class="field"><label>并发上限</label><input class="inp" id="pv-conc" type="number" min="1" max="32" value="' + d.concurrency + '"></div>' +
+        '</div>' +
+        '<div class="field"><label>备注</label><input class="inp" id="pv-note" value="' + E(d.note || '') + '" placeholder="例如：主力账号 / 只有免费额度"></div>' +
+        '<label class="switch"><input type="checkbox" id="pv-on"' + (d.enabled ? ' checked' : '') + '>' +
+          '<span class="track"></span><span class="sw-txt">立即启用</span></label>',
+      foot: '<button class="btn" data-x="no">取消</button><button class="btn btn-primary" data-x="ok">' + (isNew ? '添加' : '保存') + '</button>',
+      onMount: function (m) {
+        var lastKindBase = kindOf(d.kind).base;
+        m.querySelector('#pv-kind').addEventListener('change', function () {
+          var k = kindOf(this.value);
+          var baseEl = m.querySelector('#pv-base');
+          if (!baseEl.value.trim() || baseEl.value === lastKindBase) baseEl.value = k.base;
+          lastKindBase = k.base;
+          m.querySelector('#pv-kind-h').textContent = k.hint;
+        });
+        m.querySelector('[data-x="no"]').addEventListener('click', ADMIN.closeDrawer);
+        m.querySelector('[data-x="ok"]').addEventListener('click', function () {
+          var name = m.querySelector('#pv-name').value.trim();
+          var base = m.querySelector('#pv-base').value.trim();
+          var kind = m.querySelector('#pv-kind').value;
+          var lines = m.querySelector('#pv-models').value.split('\n');
+          var models = [];
+          lines.forEach(function (line) {
+            line = line.trim();
+            if (!line) return;
+            var seg = line.split('|').map(function (x) { return x.trim(); });
+            var md = { id: seg[0], pin: +(seg[1] || 0) || 0, pout: +(seg[2] || 0) || 0 };
+            if ((seg[3] || '').toLowerCase() === 'vision') md.vision = true;
+            if (md.id) models.push(md);
+          });
+          if (!name) { ADMIN.toast('给个名称'); return; }
+          if (AI.providers.some(function (x) { return x.name === name && x.id !== (d.id || ''); })) { ADMIN.toast('名称重复了'); return; }
+          if (!/^https?:\/\//.test(base)) { ADMIN.toast('地址要以 http(s):// 开头'); return; }
+          if (base.indexOf('<') >= 0) { ADMIN.toast('地址里还有 <占位符>，先替换掉'); return; }
+          if (!models.length) { ADMIN.toast('至少填一个模型 ID'); return; }
+
+          if (isNew) {
+            var pv = {
+              id: 'pv-' + Date.now().toString(36),
+              name: name, kind: kind, base: base, models: models,
+              keys: [], enabled: m.querySelector('#pv-on').checked,
+              status: 'untested', checkedAt: 0, latency: 0,
+              timeout: +m.querySelector('#pv-timeout').value || 60,
+              retry: +m.querySelector('#pv-retry').value || 0,
+              concurrency: +m.querySelector('#pv-conc').value || 1,
+              note: m.querySelector('#pv-note').value.trim()
+            };
+            var kv = m.querySelector('#pv-key').value.trim();
+            if (kv) pv.keys.push({ id: 'k-' + Date.now().toString(36), label: '主密钥', key: kv, on: true, primary: true, addedAt: Date.now(), lastUsed: 0 });
+            AI.providers.push(pv);
+            if (!AI.fallback) AI.fallback = pv.id;
+            save(true);
+            ADMIN.closeDrawer();
+            ADMIN.toast('已添加 · 建议点一次「测试连接」');
+          } else {
+            d.name = name; d.kind = kind; d.base = base; d.models = models;
+            d.enabled = m.querySelector('#pv-on').checked;
+            d.timeout = +m.querySelector('#pv-timeout').value || 60;
+            d.retry = +m.querySelector('#pv-retry').value || 0;
+            d.concurrency = +m.querySelector('#pv-conc').value || 1;
+            d.note = m.querySelector('#pv-note').value.trim();
+            if (d.status === 'ok' && (d.base !== base)) d.status = 'untested';
+            save(true);
+            ADMIN.closeDrawer();
+            ADMIN.toast('已保存');
+          }
+          renderProviders(); renderRoutes(); renderMode();
+        });
+      }
+    });
+  }
+
+  document.getElementById('pv-add').addEventListener('click', function () { pvDrawer(null); });
+
+  /* ============================================================
+     10. 密钥管理抽屉
+     ============================================================ */
+  function keysDrawer(id) {
+    var p = pvById(id);
+    var d = ADMIN.drawer({
+      title: p.name + ' · 密钥',
+      body:
+        '<p class="hint" style="margin-bottom:12px">主密钥失败时按顺序试下一把。' +
+          '列表里只显示尾 4 位，点眼睛看全文；停用不等于删除，只是不再参与调用。</p>' +
+        '<div class="ai-keys" id="klist"></div>' +
+        '<div class="ai-key-add">' +
+          '<div class="form-grid two">' +
+            '<div class="field"><label>标签</label><input class="inp" id="k-label" placeholder="例如：9 月新申请"></div>' +
+            '<div class="field"><label>密钥</label><input class="inp" id="k-val" type="password" placeholder="sk-..." autocomplete="off"></div>' +
+          '</div>' +
+          '<button class="btn btn-primary" id="k-add" style="margin-top:12px">+ 添加密钥</button>' +
+        '</div>',
+      foot: '<button class="btn" data-x="ok">关闭</button>',
+      onMount: function (m) {
+        m.querySelector('[data-x="ok"]').addEventListener('click', ADMIN.closeDrawer);
+        function paint() {
+          var host = m.querySelector('#klist');
+          host.innerHTML = (p.keys || []).map(function (k) {
+            var isMain = k.primary && k.on;
+            return '<div class="ai-key' + (k.on ? '' : ' is-off') + '">' +
+              '<div class="ai-key-top">' +
+                '<span class="ai-key-label">' + E(k.label || '未命名') +
+                  (isMain ? '<span class="chip ok">主</span>' : '') +
+                  (k.on ? '' : '<span class="chip">已停用</span>') + '</span>' +
+                '<label class="switch"><input type="checkbox" data-k="' + E(k.id) + '" data-act="on"' + (k.on ? ' checked' : '') + '>' +
+                  '<span class="track"></span></label>' +
+              '</div>' +
+              '<div class="ai-key-val"><code>' + E(revealed[k.id] ? k.key : maskKey(k.key)) + '</code>' +
+                '<button class="ai-mini" data-act="eye" data-k="' + E(k.id) + '">' + I(revealed[k.id] ? 'eyeOff' : 'eye') + '</button>' +
+                '<button class="ai-mini" data-act="copy" data-k="' + E(k.id) + '">' + I('copy') + '</button>' +
+              '</div>' +
+              '<div class="ai-key-meta">添加于 ' + agoDay(k.addedAt) + ' · 最近使用 ' + agoMin(k.lastUsed) + '</div>' +
+              '<div class="ai-key-acts">' +
+                (isMain ? '' : '<button class="btn btn-sm btn-ghost" data-act="primary" data-k="' + E(k.id) + '">设为主密钥</button>') +
+                '<button class="btn btn-sm btn-ghost" data-act="del" data-k="' + E(k.id) + '">删除</button>' +
+              '</div>' +
+            '</div>';
+          }).join('') || '<div class="ai-key-empty">还没有密钥，这个供应商现在调不通。</div>';
+        }
+        paint();
+
+        host = m.querySelector('#klist');
+        host.addEventListener('click', function (e) {
+          var b = e.target.closest('button[data-act]');
+          if (!b) return;
+          var kid = b.getAttribute('data-k');
+          var k = null;
+          (p.keys || []).forEach(function (x) { if (x.id === kid) k = x; });
+          if (!k) return;
+          var act = b.getAttribute('data-act');
+          if (act === 'eye') { revealed[kid] = !revealed[kid]; paint(); }
+          else if (act === 'copy') ADMIN.copy(k.key);
+          else if (act === 'primary') {
+            (p.keys || []).forEach(function (x) { x.primary = (x.id === kid); });
+            save(true); paint(); ADMIN.toast('已切换主密钥'); renderProviders();
+          } else if (act === 'del') {
+            var left = (p.keys || []).filter(function (x) { return x.on && x.id !== kid; });
+            if (!left.length) { ADMIN.toast('至少留一把可用密钥，否则这个供应商会调不通'); return; }
+            p.keys = p.keys.filter(function (x) { return x.id !== kid; });
+            if (k.primary && p.keys[0]) p.keys[0].primary = true;
+            save(true); paint(); ADMIN.toast('已删除'); renderProviders();
+          }
+        });
+        host.addEventListener('change', function (e) {
+          var el = e.target.closest('input[data-act="on"]');
+          if (!el) return;
+          var kid = el.getAttribute('data-k');
+          (p.keys || []).forEach(function (x) { if (x.id === kid) x.on = el.checked; });
+          var main = (p.keys || []).filter(function (x) { return x.on; });
+          if (main.length && !main.some(function (x) { return x.primary; })) main[0].primary = true;
+          if (!main.length) { ADMIN.toast('没有可用密钥了，调用会失败'); }
+          save(true); paint(); renderProviders();
+        });
+        m.querySelector('#k-add').addEventListener('click', function () {
+          var label = m.querySelector('#k-label').value.trim() || '备用';
+          var val = m.querySelector('#k-val').value.trim();
+          if (val.length < 8) { ADMIN.toast('密钥太短，检查一下'); return; }
+          if ((p.keys || []).some(function (x) { return x.key === val; })) { ADMIN.toast('这把已经加过了'); return; }
+          var first = !(p.keys || []).length;
+          p.keys = p.keys || [];
+          p.keys.push({ id: 'k-' + Date.now().toString(36), label: label, key: val, on: true, primary: first, addedAt: Date.now(), lastUsed: 0 });
+          if (p.status !== 'ok') p.status = 'untested';
+          save(true);
+          m.querySelector('#k-label').value = '';
+          m.querySelector('#k-val').value = '';
+          paint(); renderProviders();
+          ADMIN.toast('已添加 · 记得测试连接');
+        });
+      }
+    });
+    return d;
+  }
+
+  /* ============================================================
+     11. 模型分配表
+     ============================================================ */
+  function renderRoutes() {
+    var rows = SCENES.map(function (s) {
+      var r = AI.routes[s.id] || {};
+      var p = pvById(r.pv), m = mdOf(r.pv, r.model);
+      var u = AI.usage.byUse[s.id] || { calls: 0 };
+      var monthly = Math.round(u.calls * 30 / (AI.usage.span || 14));
+      var warn = s.vision && m && !m.vision;
+      var off = p && !p.enabled;
+      return '<tr data-scene="' + s.id + '">' +
+        '<td><div class="ai-sc"><span class="ai-sc-ico">' + I(s.icon) + '</span>' +
+          '<div><div class="t-main">' + E(s.name) + '</div><div class="t-sub">' + E(s.desc) + '</div></div></div></td>' +
+        '<td><select class="sel sel-sm" data-scene="' + s.id + '">' + routeOptions(s.id, r) + '</select>' +
+          (off ? '<div class="ai-sc-warn">供应商已停用，会走兜底</div>' : '') +
+          (warn ? '<div class="ai-sc-warn">这个模型看不了图，识字会失败</div>' : '') + '</td>' +
+        '<td class="num">' + (s.id === 'ocr' ? '<span class="chip line">需视觉</span>' : '<span class="muted">文本</span>') + '</td>' +
+        '<td class="num">' + (perCall(s, r.pv, r.model) ? yuan(perCall(s, r.pv, r.model)) : '免费') + '</td>' +
+        '<td class="num">' + num(monthly) + '</td>' +
+        '<td class="t-act"><button class="btn btn-sm btn-ghost" data-try="' + s.id + '">试跑</button></td>' +
+      '</tr>';
+    }).join('');
+
+    document.getElementById('routes').innerHTML =
+      '<thead><tr><th>环节</th><th style="width:38%">主模型</th><th class="num">类型</th>' +
+      '<th class="num">单次成本</th><th class="num">本月调用</th><th></th></tr></thead><tbody>' + rows + '</tbody>';
+
+    var fb = pvById(AI.fallback) || AI.providers[0];
+    document.getElementById('routes-foot').innerHTML =
+      '<div class="ai-fb">' +
+        '<div class="ai-fb-l"><span class="ai-fb-k">全局兜底</span>' +
+          '<select class="sel sel-sm" id="fb-pv">' +
+            AI.providers.map(function (p) {
+              return '<option value="' + E(p.id) + '"' + (fb && fb.id === p.id ? ' selected' : '') + '>' +
+                E(p.name) + ' · ' + ((p.models[0] || {}).id || '—') + '</option>';
+            }).join('') +
+          '</select>' +
+          '<span class="ai-fb-n">= ' + yuan(estMonth()) + ' / 月（按当前分配与近 14 天用量推算）</span>' +
+        '</div>' +
+        '<div class="hint">主模型超时或报错时自动切到兜底，并在「最近调用」里记一条「降级」。' +
+          '改完立即对新请求生效，已经在跑的批改任务仍用旧模型。</div>' +
+      '</div>';
+  }
+
+  function routeOptions(sceneId, cur) {
+    var s = sceneOf(sceneId);
+    return AI.providers.map(function (p) {
+      return '<optgroup label="' + E(p.name) + (p.enabled ? '' : '（已停用）') + '">' +
+        (p.models || []).map(function (m) {
+          var v = p.id + '|' + m.id;
+          var on = cur && cur.pv === p.id && cur.model === m.id;
+          return '<option value="' + E(v) + '"' + (on ? ' selected' : '') + '>' +
+            E(m.id) + (m.vision ? ' · 可看图' : '') + (s.vision && !m.vision ? '（看不了图）' : '') + '</option>';
+        }).join('') + '</optgroup>';
+    }).join('');
+  }
+
+  document.getElementById('routes').addEventListener('change', function (e) {
+    var sel = e.target.closest('select[data-scene]');
+    if (!sel) return;
+    var id = sel.getAttribute('data-scene');
+    var parts = sel.value.split('|');
+    AI.routes[id] = { pv: parts[0], model: parts[1] };
+    AI.mode = 'custom';
+    save(true);
+    var s = sceneOf(id), m = mdOf(parts[0], parts[1]);
+    ADMIN.toast(s.name.split(' · ')[0] + ' 已切到 ' + pvById(parts[0]).name + ' · ' + parts[1]);
+    if (s.vision && m && !m.vision) ADMIN.toast('注意：这个模型不支持看图');
+    renderMode(); renderRoutes(); renderKpis();
+  });
+
+  document.getElementById('routes').addEventListener('click', function (e) {
+    var b = e.target.closest('[data-try]');
+    if (b) tryScene(b.getAttribute('data-try'));
+  });
+
+  document.getElementById('route-reset').addEventListener('click', function () {
+    ADMIN.confirm({
+      title: '恢复到「均衡」分配？', ok: '恢复',
+      text: '七个环节的模型会全部按均衡档重排，你自定义的选择会被覆盖。',
+      onOk: function () { applyMode('balanced'); }
+    });
+  });
+
+  /* ============================================================
+     12. 试跑
+     ============================================================ */
+  var SAMPLE = {
+    gen: '题干：已知二次函数 y = ax² + bx + c 的图象经过点 (1, 0) 与 (3, 0)，且与 y 轴交于 (0, 3)，求解析式。\n答案：y = x² − 4x + 3\n采分点：设一般式 1 分 / 代入三点 2 分 / 化简 1 分',
+    ocr: '识别到 1 道题 · 2 个公式 · 1 张配图\n结构化结果：\n  type: T2（填空）\n  stem: 如图，在 △ABC 中，∠A = 30°，AB = 4，则 BC = ____。\n  置信度：0.91',
+    review: '判重：与 Q-1043 相似度 0.42（安全）\n超纲检查：知识点「二次函数 · 判别式」在初三范围\n置信分：0.93 → 建议自动通过',
+    essay: '总分：41 / 50\n内容 17/20 · 语言 14/20 · 结构 10/10\n亮点：「他把车当成脸面」一句抓得准，结尾回扣题目。\n建议：第 3 段用「先是…接着…最后」把过程写清。',
+    explain: '错因：把「对称轴」当成「顶点横坐标」，公式记混。\n第 1 步：先看 a、b 的符号定开口与对称轴；\n第 2 步：对称轴 x = −b/2a = 1；\n第 3 步：代入端点比较函数值。\n同类变式：y = 2x² + 4x − 1 在 [−3, 0] 上的最值。',
+    word: 'abandon /əˈbændən/ v. 抛弃，放弃\n例：He abandoned the plan.（他放弃了这个计划。）\n变形：abandoned / abandoning / abandonment\n搭配：abandon oneself to 沉溺于',
+    readq: 'Q：第 3 段中「车」对祥子意味着什么？\n参考答案：既是谋生的工具，也是他体面的象征；失去车等于失去做人的底气。\n评分：答出「工具」1 分，答出「体面/尊严」1 分，结合原文 1 分。'
+  };
+  function tryScene(id) {
+    var s = sceneOf(id), r = AI.routes[id] || {}, p = pvById(r.pv), m = mdOf(r.pv, r.model);
+    var tin = Math.round(s.tin * (0.9 + Math.random() * 0.2));
+    var tout = Math.round(s.tout * (0.9 + Math.random() * 0.2));
+    var cost = m ? (tin * m.pin + tout * m.pout) / 1000 : 0;
+    var blocked = !p || !p.enabled || !m;
+
+    ADMIN.modal({
+      title: '试跑 · ' + s.name,
+      body: '<div class="ai-try" id="ai-try">' +
+        '<div class="ai-try-load"><span class="ai-dot"></span><span class="ai-dot"></span><span class="ai-dot"></span>' +
+        '正在请求 ' + E(p ? p.name : '—') + ' · ' + E(r.model || '—') + ' …</div></div>',
+      foot: '<button class="btn" data-x="no">关闭</button>',
+      onMount: function (mo) {
+        mo.querySelector('[data-x="no"]').addEventListener('click', ADMIN.closeModal);
+        setTimeout(function () {
+          var host = document.getElementById('ai-try');
+          if (!host) return;
+          if (blocked) {
+            host.innerHTML = '<div class="ai-try-head bad">' + I('alert') + '没有发出请求</div>' +
+              '<p class="ai-try-p">这个环节的供应商已停用或没有配置模型，正式环境会直接走全局兜底。</p>';
+            return;
+          }
+          var ms = Math.round((p.latency || 700) + 600 + Math.random() * 900);
+          host.innerHTML =
+            '<div class="ai-try-head ok">' + I('check2') + '请求成功</div>' +
+            '<div class="ai-try-kv">' +
+              '<div><span>模型</span><b>' + E(p.name) + ' · ' + E(r.model) + '</b></div>' +
+              '<div><span>耗时</span><b>' + (ms / 1000).toFixed(1) + ' 秒</b></div>' +
+              '<div><span>tokens</span><b>' + tok(tin) + ' 入 / ' + tok(tout) + ' 出</b></div>' +
+              '<div><span>这一次花了</span><b>' + (cost ? '¥' + cost.toFixed(4) : '免费') + '</b></div>' +
+            '</div>' +
+            '<div class="ai-try-out"><div class="ai-try-out-k">返回片段</div><pre>' + E(SAMPLE[id] || '（示例输出）') + '</pre></div>' +
+            '<p class="hint">试跑按最大难度走一遍，结果不入库、不计入用量。</p>';
+        }, 900);
+      }
+    });
+  }
+
+  /* ============================================================
+     13. 启动
+     ============================================================ */
+  function renderAll() {
+    renderMode(); renderKpis(); renderChart(); renderByUse(); renderRecent();
+    renderBudget(); renderByModel(); renderProviders(); renderRoutes();
+  }
+  renderAll();
+
+  /* ---------- 自检：无头验证用，正常打开不触发 ---------- */
+  if (has('selftest')) {
+    var t = [];
+    function chk(n, c, x) { t.push((c ? 'PASS ' : 'FAIL ') + n + (x !== undefined ? '=' + x : '')); }
+
+    chk('providers', AI.providers.length >= 4, AI.providers.length);
+    chk('pv-cards', document.querySelectorAll('.ai-pv').length === AI.providers.length);
+    chk('kpi-4', document.querySelectorAll('#kpis .stat').length === 4);
+    chk('chart-14', document.querySelectorAll('.ai-col').length === 14);
+    chk('byuse-7', document.querySelectorAll('.ai-use').length === 7);
+    chk('recent-18', document.querySelectorAll('#recent tbody tr').length === 18);
+    chk('routes-7', document.querySelectorAll('#routes tbody tr').length === 7);
+    chk('mode-seg', document.querySelectorAll('#mode-seg button').length === 3);
+    chk('key-masked', document.body.innerHTML.indexOf(AI.providers[0].keys[0].key) < 0);
+    chk('budget', !!document.getElementById('bud-month'));
+
+    var before = estMonth();
+    applyMode('save', true);
+    chk('switch-mode', AI.mode === 'save', AI.mode);
+    chk('switch-route', AI.routes.gen.model, AI.routes.gen.model);
+    var after = estMonth();
+    chk('cost-drop', after < before, Math.round(before) + '>' + Math.round(after));
+
+    /* 单条路由切换应写进 DB */
+    AI.routes.explain = { pv: 'pv-zp', model: 'glm-4-plus' };
+    save(true);
+    chk('route-persist', DB.get('ai').routes.explain.model === 'glm-4-plus', DB.get('ai').routes.explain.model);
+
+    /* 占用中的供应商不能删 */
+    var pv0 = AI.providers[0];
+    AI.routes.gen = { pv: pv0.id, model: pv0.models[0].id };
+    save(true);
+    delPv(pv0.id);
+    chk('del-blocked', !!document.getElementById('modal-mask'));
+    ADMIN.closeModal();
+
+    /* 密钥抽屉：加一把、再删掉 */
+    keysDrawer('pv-ds');
+    chk('keys-drawer', !!document.querySelector('.ai-keys'));
+    var addBtn = document.getElementById('k-add');
+    if (addBtn) {
+      document.getElementById('k-label').value = '自检临时';
+      document.getElementById('k-val').value = 'sk-selftest-000000000000';
+      addBtn.click();
+      var pds = pvById('pv-ds');
+      chk('key-added', pds.keys.some(function (k) { return k.key === 'sk-selftest-000000000000'; }));
+      var klist = document.getElementById('klist');
+      chk('key-only-masked', klist && klist.innerHTML.indexOf('sk-selftest') < 0);
+      chk('pv-card-masked', document.getElementById('pvs').innerHTML.indexOf('4f7c2b9e1a6d43f8b0c5e7d2a19c9a2e') < 0);
+      var tmp = pds.keys.filter(function (k) { return k.key === 'sk-selftest-000000000000'; })[0];
+      var delBtn = document.querySelector('.ai-key [data-k="' + tmp.id + '"]');
+      pds.keys = pds.keys.filter(function (k) { return k.id !== tmp.id; });
+      chk('key-removed', pds.keys.length === 2, pds.keys.length);
+    }
+    ADMIN.closeDrawer();
+
+    /* 试跑弹层 */
+    tryScene('gen');
+    chk('try-modal', !!document.getElementById('modal'));
+    ADMIN.closeModal();
+
+    /* 还原，方便截图看到均衡档 */
+    var back = JSON.parse(snap);
+    AI.routes = back.routes; AI.mode = back.mode; AI.modeAt = back.modeAt;
+    save(true);
+    renderAll();
+
+    /* ?ui=keys|form|try：把对应交互停在打开状态，供无头截图 */
+    var ui = (location.search.match(/[?&]ui=(\w+)/) || [])[1];
+    if (ui === 'keys') keysDrawer('pv-ds');
+    else if (ui === 'form') pvDrawer(null);
+    else if (ui === 'try') tryScene('essay');
+
+    document.body.setAttribute('data-selftest', t.join(';'));
+  }
+})();
+</script>
+</body>
+</html>

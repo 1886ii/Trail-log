@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="light">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#F5F6F8">
+<title>每日任务 · 学迹</title>
+<script>document.documentElement.classList.add('js-on');</script>
+<link rel="stylesheet" href="style.css?v=20261021a">
+</head>
+<body data-page="daily">
+
+<div class="app">
+<main class="main">
+
+  <header class="topbar" id="topbar"></header>
+
+  <div class="content">
+
+    <!-- 今日进度 -->
+    <section class="hero reveal">
+      <div class="hero-ring" data-ring="17" role="img" aria-label="今日完成度 17%">
+        <svg viewBox="0 0 120 120" aria-hidden="true">
+          <circle class="track" cx="60" cy="60" r="50"></circle>
+          <circle class="val"   cx="60" cy="60" r="50"></circle>
+        </svg>
+        <div class="hero-ring-txt">
+          <b id="done-count">1</b>
+          <span>/ <span id="total-count">6</span> 件</span>
+        </div>
+      </div>
+
+      <div class="hero-body">
+        <p class="hero-title" id="progress-label">今天 6 件事 · 已完成 1 件</p>
+        <p class="hero-meta">任务由管理端每天发布 · 今日已学 25 分钟 · 连续打卡 7 天</p>
+        <div class="chips">
+          <span class="chip brand">数学</span>
+          <span class="chip">英语</span>
+          <span class="chip">阅读</span>
+          <span class="chip">作文</span>
+          <span class="chip">计算</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- todolist：管理端发布的五类任务 + 错题复习 -->
+    <section class="section reveal">
+      <h2 class="section-title">今日任务 <span class="count">· 管理端发布 · 按顺序做完就算今天过关</span></h2>
+
+      <ul class="todo-list">
+
+        <li class="todo">
+          <button class="todo-check" type="button" aria-pressed="false" aria-label="标记每日题目为完成"></button>
+          <div class="todo-main">
+            <p class="todo-title">每日题目</p>
+            <p class="todo-meta">数学 · 一元二次方程 · 10 题 · 约 25 分钟</p>
+          </div>
+          <a class="todo-action" href="practice.html">开始</a>
+        </li>
+
+        <li class="todo done">
+          <button class="todo-check" type="button" aria-pressed="true" aria-label="标记每日必备单词为未完成"></button>
+          <div class="todo-main">
+            <p class="todo-title">每日必备单词<span class="todo-tag tag-done">已完成</span></p>
+            <p class="todo-meta">新词 12 个 · 复习 28 个 · 正确率 89%</p>
+          </div>
+          <a class="todo-action ghost" href="words.html">看看</a>
+        </li>
+
+        <li class="todo">
+          <button class="todo-check" type="button" aria-pressed="false" aria-label="标记每日阅读任务为完成"></button>
+          <div class="todo-main">
+            <p class="todo-title">每日阅读任务</p>
+            <p class="todo-meta">《骆驼祥子》第 3 章 · 约 20 分钟</p>
+          </div>
+          <a class="todo-action" href="reading.html">继续</a>
+        </li>
+
+        <li class="todo">
+          <button class="todo-check" type="button" aria-pressed="false" aria-label="标记作文为完成"></button>
+          <div class="todo-main">
+            <p class="todo-title">作文<span class="todo-tag tag-week">周五前交</span></p>
+            <p class="todo-meta">英语 · My Weekend · 不少于 80 词 · 有引导和批改</p>
+          </div>
+          <a class="todo-action" href="essay.html">去写</a>
+        </li>
+
+        <li class="todo">
+          <button class="todo-check" type="button" aria-pressed="false" aria-label="标记每日计算为完成"></button>
+          <div class="todo-main">
+            <p class="todo-title">每日计算<span class="todo-tag tag-week">拍照批改</span></p>
+            <p class="todo-meta">数学 · 有理数混合运算 · 10 题 · 纸上完成后拍照上传，AI 评阅</p>
+          </div>
+          <a class="todo-action" href="calc.html">上传批改</a>
+        </li>
+
+        <li class="todo">
+          <button class="todo-check" type="button" aria-pressed="false" aria-label="标记错题复习为完成"></button>
+          <div class="todo-main">
+            <p class="todo-title">错题复习<span class="todo-tag tag-week">到复习时间</span></p>
+            <p class="todo-meta">错题本 · 3 道到了复习节点 · 约 10 分钟 · 单独的复习流程</p>
+          </div>
+          <a class="todo-action ghost" href="mistake-review.html">去复习</a>
+        </li>
+
+      </ul>
+    </section>
+
+    <!-- 顺带看看 -->
+    <section class="section reveal">
+      <h2 class="section-title">顺带看看</h2>
+      <div class="quick-grid">
+
+        <a class="quick" href="all.html">
+          <div class="quick-ico">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"
+                 stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <rect x="4" y="4" width="7" height="7" rx="1.5"/><rect x="13" y="4" width="7" height="7" rx="1.5"/>
+              <rect x="4" y="13" width="7" height="7" rx="1.5"/><rect x="13" y="13" width="7" height="7" rx="1.5"/>
+            </svg>
+          </div>
+          <div class="quick-txt">
+            <p>全科掌握度</p>
+            <p>三主科已开放 · 六门规划中</p>
+          </div>
+          <span class="quick-badge">看看</span>
+        </a>
+
+        <a class="quick" href="me.html#growth">
+          <div class="quick-ico">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"
+                 stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M4.2 16.6 9.7 11l3.6 3.6 6.5-6.6"/><path d="M15.2 8h4.6v4.6"/>
+            </svg>
+          </div>
+          <div class="quick-txt">
+            <p>本周报告</p>
+            <p>数学正确率 +6%</p>
+          </div>
+          <span class="quick-badge">已生成</span>
+        </a>
+
+      </div>
+    </section>
+
+  </div>
+</main>
+</div>
+
+<script src="fx.js?v=20261021a"></script>
+<script src="app.js?v=20261021a"></script>
+</body>
+</html>

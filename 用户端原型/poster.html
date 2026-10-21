@@ -1,0 +1,722 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>学迹 · 每周学习报告</title>
+<style id="poster-style">
+/* ============================================================
+   周报海报 · 独立路由
+   画布 540 × 720（导出 2x = 1080 × 1440）
+   样式全部内联，不依赖 style.css —— 这是导出与
+   服务端渲染能共用同一份模板的前提
+
+   ⚠️ 配色纪律：只允许使用 style.css 里的设计令牌
+   （--brand / --brand-soft / --surface / --text / --c-* 九科色 / --warn）
+   不为海报另造颜色。浅色 / 深色两套跟随 App 当前主题（xj-theme）。
+   ============================================================ */
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+[hidden] { display: none !important; }
+
+html, body {
+  margin: 0;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC",
+               "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* ---------- 页面外壳（不进海报）---------- */
+body {
+  background: #F5F6F8;          /* --bg */
+  color: #191C20;
+  display: flex; align-items: center; justify-content: center;
+  min-height: 100vh;
+  padding: 28px 16px 104px;
+}
+[data-theme="dark"] body { background: #0F1115; color: #E7EAEE; }
+
+.stage { width: 540px; height: 720px; }
+
+/* ============================================================
+   海报本体 · 变量全部落在 .poster 上
+   （不能写在 :root —— 导出时只序列化 .poster，
+     foreignObject 里没有 html 元素，:root 不会命中）
+   ============================================================ */
+.poster {
+  /* —— 浅色（= style.css :root）—— */
+  --surface:   #FFFFFF;
+  --surface-2: #F1F3F6;
+  --surface-3: #E9ECF1;
+  --border:    #E5E8EC;
+  --text:      #191C20;
+  --text-2:    #616B7A;
+  --text-3:    #98A1AE;
+
+  --brand:      #2B6CF6;
+  --brand-text: #1B54D0;
+  --brand-soft: #EAF1FF;
+  --ok:         #12A150;
+
+  --c-cn:   #E08A00;
+  --c-math: #4A83FF;
+  --c-en:   #17B26A;
+  --c-phy:  #7C5CFF;
+  --c-che:  #0FB5AE;
+  --c-bio:  #7FB800;
+  --c-his:  #C2410C;
+  --c-pol:  #DB2777;
+  --c-geo:  #0891B2;
+
+  --gold: #F0B429;              /* 系统深色主题的 --warn，用作点缀金 */
+
+  /* 品牌渐变：直接复用登录页的品牌区 --auth-grad */
+  --hero-grad: linear-gradient(160deg, #4A83FF 0%, #2358E0 46%, #12318F 100%);
+  --hero-star: rgba(255, 255, 255, .55);
+  --on-hero:   #FFFFFF;
+  --on-hero-2: rgba(255, 255, 255, .76);
+  --on-hero-3: rgba(255, 255, 255, .44);
+  --hero-line: rgba(255, 255, 255, .18);
+
+  --shadow-card: 0 1px 3px rgba(16, 24, 40, .06), 0 8px 24px -12px rgba(16, 24, 40, .10);
+
+  width: 540px;
+  height: 720px;
+  padding: 26px 30px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 11px;
+  overflow: hidden;
+  position: relative;
+  border-radius: 12px;
+  color: var(--text);
+  background: var(--surface);
+  box-shadow: var(--shadow-card);
+  border: 1px solid var(--border);
+}
+
+/* —— 深色（= style.css [data-theme="dark"]）—— */
+.poster.dark {
+  --surface:   #171A20;
+  --surface-2: #1F232B;
+  --surface-3: #262B34;
+  --border:    #2A2F38;
+  --text:      #E7EAEE;
+  --text-2:    #9AA3B0;
+  --text-3:    #6B7480;
+
+  --brand:      #5B8DFF;
+  --brand-text: #8DB0FF;
+  --brand-soft: #17233C;
+  --ok:         #3DD68C;
+
+  --c-cn:   #F0B429;
+  --c-math: #5B8DFF;
+  --c-en:   #3DD68C;
+  --c-phy:  #A78BFA;
+  --c-che:  #2DD4BF;
+  --c-bio:  #A3E635;
+  --c-his:  #FB923C;
+  --c-pol:  #F472B6;
+  --c-geo:  #22D3EE;
+
+  --hero-grad: linear-gradient(160deg, #1E3D8C 0%, #16275C 52%, #0C1226 100%);
+  --hero-star: rgba(200, 220, 255, .55);
+  --on-hero:   #EAF0FF;
+  --on-hero-2: rgba(214, 226, 255, .76);
+  --on-hero-3: rgba(214, 226, 255, .44);
+  --hero-line: rgba(141, 176, 255, .18);
+
+  --shadow-card: 0 1px 3px rgba(0, 0, 0, .35), 0 8px 24px -12px rgba(0, 0, 0, .5);
+}
+
+/* ---------- ① 头部 ---------- */
+.p-head {
+  height: 46px; flex: none;
+  display: flex; align-items: center; justify-content: space-between;
+}
+.p-who { display: flex; align-items: center; gap: 10px; }
+.p-logo {
+  width: 34px; height: 34px; border-radius: 10px;
+  background: var(--brand);
+  color: #FFFFFF;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 16px; font-weight: 600;
+  box-shadow: 0 4px 12px -4px var(--brand);
+}
+.p-app  { font-size: 13px; font-weight: 600; color: var(--text); }
+.p-week { font-size: 11px; color: var(--text-3); margin-top: 2px; }
+.p-user { display: flex; align-items: center; gap: 9px; }
+.p-nick { font-size: 12.5px; color: var(--text-2); }
+.p-ava {
+  width: 34px; height: 34px; border-radius: 50%;
+  background: var(--brand-soft);
+  color: var(--brand-text);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 14px; font-weight: 600;
+}
+
+/* ---------- ② 主数字（视觉锤 · 品牌渐变块）---------- */
+.p-hero {
+  flex: 1 1 auto; min-height: 0;
+  position: relative; overflow: hidden;
+  border-radius: 16px;
+  padding: 15px 18px 14px;
+  background: var(--hero-grad);
+  display: flex; flex-direction: column;
+}
+/* 星点：与 App 星空背景同一种语言 */
+.p-hero::before {
+  content: ''; position: absolute; inset: 0; pointer-events: none;
+  background:
+    radial-gradient(1.5px 1.5px at 22% 20%, var(--hero-star), transparent),
+    radial-gradient(1.3px 1.3px at 68% 12%, var(--hero-star), transparent),
+    radial-gradient(1.6px 1.6px at 88% 34%, var(--hero-star), transparent),
+    radial-gradient(1.2px 1.2px at 40% 46%, var(--hero-star), transparent),
+    radial-gradient(1.4px 1.4px at 12% 62%, var(--hero-star), transparent),
+    radial-gradient(1.2px 1.2px at 78% 74%, var(--hero-star), transparent),
+    radial-gradient(1.5px 1.5px at 52% 88%, var(--hero-star), transparent),
+    radial-gradient(1.2px 1.2px at 92% 96%, var(--hero-star), transparent);
+}
+.p-hero-top {
+  display: flex; align-items: flex-start; justify-content: space-between;
+  gap: 10px; position: relative;
+}
+.p-kicker { font-size: 11.5px; color: var(--on-hero-2); letter-spacing: 1.5px; }
+.p-num { display: flex; align-items: baseline; gap: 7px; margin-top: 2px; }
+.p-num b {
+  font-size: 72px; line-height: .96; font-weight: 700;
+  color: var(--gold); letter-spacing: -3px;
+  text-shadow: 0 2px 18px rgba(240, 180, 41, .40);
+}
+.p-num i { font-size: 15px; font-style: normal; color: var(--on-hero-2); font-weight: 500; }
+
+.p-medal { flex: none; width: 64px; height: 64px; }
+.p-medal svg { display: block; }
+
+.p-title {
+  align-self: flex-start;
+  display: inline-flex; align-items: center; gap: 6px;
+  margin-top: 9px; padding: 4px 13px 4px 10px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, .14);
+  border: 1px solid var(--hero-line);
+  font-size: 12.5px; font-weight: 600; color: var(--on-hero);
+  position: relative;
+}
+.p-title em {
+  font-style: normal; font-weight: 400; font-size: 10.5px;
+  color: var(--on-hero-3); letter-spacing: .5px;
+}
+
+.p-mini { display: flex; gap: 8px; margin-top: auto; padding-top: 10px; position: relative; }
+.p-m {
+  flex: 1; border-radius: 11px; padding: 7px 11px 8px;
+  background: rgba(255, 255, 255, .13);
+  border: 1px solid var(--hero-line);
+}
+.p-m b { display: block; font-size: 16px; font-weight: 700; color: var(--on-hero); letter-spacing: -.3px; }
+.p-m span { display: block; font-size: 10.5px; color: var(--on-hero-2); margin-top: 2px; }
+
+/* ---------- ③ 成就徽章 ---------- */
+.p-badges { flex: none; display: flex; gap: 8px; }
+.p-bd {
+  flex: 1; border-radius: 12px; padding: 7px 4px 6px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  display: flex; flex-direction: column; align-items: center; gap: 3px;
+}
+.p-bd svg { width: 22px; height: 22px; display: block; }
+.p-bd span { font-size: 10px; color: var(--text-2); white-space: nowrap; }
+.p-bd.off { opacity: .38; }
+
+/* ---------- ④⑤ 浅底信息块 ---------- */
+.p-card {
+  flex: none; border-radius: 12px; padding: 11px 14px 12px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+}
+.p-ttl {
+  font-size: 11.5px; font-weight: 600; color: var(--text);
+  margin-bottom: 9px; display: flex; align-items: center; gap: 6px;
+}
+.p-ttl::before {
+  content: ''; width: 3px; height: 11px; border-radius: 2px;
+  background: var(--brand);
+}
+.p-ttl em { font-style: normal; font-weight: 400; color: var(--text-3); font-size: 10.5px; }
+
+.p-rows { display: flex; flex-direction: column; gap: 8px; }
+.p-row { display: flex; align-items: center; gap: 9px; }
+.p-dot { flex: none; width: 7px; height: 7px; border-radius: 50%; }
+.p-sub { flex: none; width: 30px; font-size: 11.5px; color: var(--text-2); }
+.p-track {
+  flex: 1; height: 11px; border-radius: 6px;
+  background: var(--surface-3); overflow: hidden;
+}
+.p-track i { display: block; height: 100%; border-radius: 6px; }
+.p-row b {
+  flex: none; width: 36px; text-align: right;
+  font-size: 12px; font-weight: 700; color: var(--text);
+}
+.p-row.weak b { color: var(--gold); }
+.p-row.weak .p-sub { color: var(--text); }
+
+.p-bars {
+  display: flex; align-items: flex-end; justify-content: space-between;
+  height: 62px;
+}
+.p-b { width: 40px; display: flex; flex-direction: column; align-items: center; }
+.p-b i { display: block; width: 22px; border-radius: 6px; background: var(--brand); }
+.p-b span { font-size: 10.5px; color: var(--text-3); margin-top: 5px; }
+.p-b.top i { background: var(--gold); box-shadow: 0 0 12px rgba(240, 180, 41, .55); }
+.p-b.top span { color: var(--gold); font-weight: 600; }
+
+/* ---------- ⑥ AI 点评 ---------- */
+.p-ai {
+  flex: none; border-radius: 12px; padding: 11px 14px 12px;
+  background: var(--brand-soft);
+  border: 1px solid var(--border);
+}
+.p-sum { font-size: 11.5px; line-height: 1.62; color: var(--text); }
+.p-tip { font-size: 11px; line-height: 1.6; color: var(--text-2); }
+.p-tip:first-of-type { margin-top: 7px; }
+
+/* ---------- 页脚 ---------- */
+.p-foot {
+  flex: none; height: 16px;
+  display: flex; align-items: center; justify-content: space-between;
+  font-size: 10px; color: var(--text-3);
+}
+
+/* ============================================================
+   页面外壳：工具栏 + 导出后的长按保存层（不进海报）
+   ============================================================ */
+.toolbar {
+  position: fixed; top: 24px; right: 24px;
+  display: flex; gap: 10px; z-index: 20;
+}
+.tb-btn {
+  height: 40px; padding: 0 18px;
+  border: 1px solid #D5DAE1; border-radius: 10px;
+  background: #FFFFFF; color: #191C20;
+  font-family: inherit; font-size: 13.5px; cursor: pointer;
+  transition: background .15s, border-color .15s;
+}
+[data-theme="dark"] .tb-btn { background: #1F232B; color: #E7EAEE; border-color: #3A414C; }
+.tb-btn:hover { background: #F1F3F6; }
+[data-theme="dark"] .tb-btn:hover { background: #262B34; }
+.tb-btn.primary { background: #2B6CF6; border-color: #2B6CF6; color: #FFFFFF; }
+.tb-btn.primary:hover { background: #1B54D0; border-color: #1B54D0; }
+.tb-btn[disabled] { opacity: .6; cursor: default; }
+
+.mask {
+  position: fixed; inset: 0; z-index: 40;
+  background: rgba(16, 23, 38, .78);
+  display: flex; flex-direction: column;
+  align-items: center; justify-content: center;
+  gap: 16px; padding: 24px 16px; overflow-y: auto;
+}
+.mask-tip { color: #E9EEF7; font-size: 13.5px; text-align: center; }
+.mask img {
+  width: auto; max-width: 100%; max-height: 68vh;
+  border-radius: 10px; background: #FFFFFF;
+}
+
+.toast {
+  position: fixed; left: 50%; bottom: 110px; transform: translate(-50%, 8px);
+  background: rgba(20, 28, 45, .92); color: #FFFFFF;
+  font-size: 13px; padding: 10px 18px; border-radius: 10px;
+  opacity: 0; pointer-events: none; transition: opacity .2s, transform .2s;
+  z-index: 60;
+}
+.toast.on { opacity: 1; transform: translate(-50%, 0); }
+
+/* ---------- 窄屏：海报等比缩放 + 工具栏吸底 ---------- */
+@media (max-width: 599px) {
+  body { padding: 16px 12px 92px; align-items: flex-start; }
+  .toolbar {
+    top: auto; right: 0; left: 0; bottom: 0;
+    padding: 10px 12px calc(10px + env(safe-area-inset-bottom));
+    background: #FFFFFF; border-top: 1px solid #E5E8EC;
+  }
+  [data-theme="dark"] .toolbar { background: #171A20; border-top-color: #2A2F38; }
+  .tb-btn { flex: 1; height: 42px; padding: 0 10px; font-size: 13px; }
+  .mask img { max-height: 62vh; }
+}
+</style>
+</head>
+<body>
+
+<div class="stage" id="stage">
+  <div class="poster" id="poster">
+
+    <header class="p-head">
+      <div class="p-who">
+        <span class="p-logo">迹</span>
+        <div>
+          <p class="p-app">学迹 · 每周学习报告</p>
+          <p class="p-week" id="pWeek">第 41 周 · 10.05 – 10.11</p>
+        </div>
+      </div>
+      <div class="p-user">
+        <p class="p-nick" id="pNick">小宇</p>
+        <span class="p-ava" id="pAva">宇</span>
+      </div>
+    </header>
+
+    <section class="p-hero">
+      <div class="p-hero-top">
+        <div>
+          <p class="p-kicker">本周连续打卡</p>
+          <p class="p-num"><b id="pStreak">7</b><i>天</i></p>
+        </div>
+        <span class="p-medal" id="pMedal"></span>
+      </div>
+      <p class="p-title"><em>本周称号</em><span id="pTitle">坚持之星</span></p>
+      <div class="p-mini">
+        <div class="p-m"><b id="pRate">88%</b><span>任务完成率</span></div>
+        <div class="p-m"><b id="pAcc">81%</b><span>平均正确率</span></div>
+        <div class="p-m"><b id="pWord">40</b><span>本周单词</span></div>
+      </div>
+    </section>
+
+    <section class="p-badges" id="pBadges"></section>
+
+    <section class="p-card">
+      <p class="p-ttl">各科正确率</p>
+      <div class="p-rows" id="pRows"></div>
+    </section>
+
+    <section class="p-card">
+      <p class="p-ttl">一周节奏 <em>· 每天完成的任务数</em></p>
+      <div class="p-bars" id="pBars"></div>
+    </section>
+
+    <section class="p-ai">
+      <p class="p-ttl">AI 点评</p>
+      <p class="p-sum" id="pSum"></p>
+      <p class="p-tip" id="pTip1"></p>
+      <p class="p-tip" id="pTip2"></p>
+    </section>
+
+    <footer class="p-foot">
+      <span id="pMade">学迹 · 2026 年 10 月 11 日生成</span>
+      <span>数据仅自己可见，分享前想一下给谁看</span>
+    </footer>
+
+  </div>
+</div>
+
+<div class="toolbar">
+  <button class="tb-btn" type="button" id="btnTheme">浅色 / 深色</button>
+  <button class="tb-btn" type="button" id="btnBack">返回</button>
+  <button class="tb-btn primary" type="button" id="btnSave">保存图片</button>
+</div>
+
+<div class="mask" id="mask" hidden>
+  <p class="mask-tip">图片已生成 · 长按可保存到相册</p>
+  <img id="maskImg" alt="本周学习报告海报">
+  <button class="tb-btn" type="button" id="btnClose">关闭</button>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+(function () {
+  'use strict';
+
+  /* ============================================================
+     数据入口
+     正式版由服务端把这一段替换成真实的周报快照
+     ============================================================ */
+  var WEEKLY = window.__WEEKLY__ || {
+    week: '第 41 周 · 10.05 – 10.11',
+    streak: 7,
+    title: '坚持之星',
+    completeRate: 88,
+    accuracy: 81,
+    words: 40,
+    subjects: [
+      { name: '数学', rate: 86, key: 'math' },
+      { name: '英语', rate: 74, key: 'en' },
+      { name: '语文', rate: 68, key: 'cn' }
+    ],
+    days: [
+      { d: '一', n: 3 }, { d: '二', n: 2 }, { d: '三', n: 4 }, { d: '四', n: 1 },
+      { d: '五', n: 4 }, { d: '六', n: 3 }, { d: '日', n: 2 }
+    ],
+    summary: '数学正确率从 74% 升到 80%，主要来自一元二次方程的巩固；英语的完形填空连续两周没动过。',
+    tips: [
+      '① 把英语完形填空排进每日任务，每天 2 题',
+      '② 周三只完成 1 项，试试把开始时间提到 20:00'
+    ],
+    madeAt: '2026 年 10 月 11 日'
+  };
+
+  /* 科目 → 设计令牌（style.css 第 989 / 1006 行的九科色） */
+  var SUB_KEY = {
+    '语文': 'cn', '数学': 'math', '英语': 'en', '物理': 'phy', '化学': 'che',
+    '生物': 'bio', '历史': 'his', '道法': 'pol', '地理': 'geo'
+  };
+
+  /* ---------- 徽章图标：内联 SVG，颜色全部走令牌 ----------
+     刻意不用 emoji：emoji 依赖生成设备的字体，
+     换到服务端 Linux 渲染会变成豆腐块；SVG 永远一致 */
+  var ICONS = {
+    shield: '<svg viewBox="0 0 24 24" fill="none">' +
+              '<path d="M12 2.2l8 2.9v5.9c0 4.9-3.4 8.5-8 10.8-4.6-2.3-8-5.9-8-10.8V5.1z" style="fill:var(--brand)"/>' +
+              '<path d="M8.2 12.1l2.6 2.6 5-5.1" style="stroke:#FFFFFF;stroke-width:2" stroke-linecap="round" stroke-linejoin="round"/>' +
+            '</svg>',
+    book:   '<svg viewBox="0 0 24 24" fill="none">' +
+              '<path d="M4 4.6h5.2c1.6 0 2.8 1.2 2.8 2.8v11.4c0-1.4-1.2-2.5-2.6-2.5H4z" style="fill:var(--c-en)" stroke-linejoin="round"/>' +
+              '<path d="M20 4.6h-5.2c-1.6 0-2.8 1.2-2.8 2.8v11.4c0-1.4 1.2-2.5 2.6-2.5H20z" style="fill:var(--c-en);opacity:.62" stroke-linejoin="round"/>' +
+            '</svg>',
+    target: '<svg viewBox="0 0 24 24" fill="none">' +
+              '<circle cx="12" cy="12" r="9" style="stroke:var(--c-cn);stroke-width:1.9"/>' +
+              '<circle cx="12" cy="12" r="4.6" style="stroke:var(--c-cn);stroke-width:1.6"/>' +
+              '<circle cx="12" cy="12" r="1.9" style="fill:var(--c-cn)"/>' +
+            '</svg>',
+    rise:   '<svg viewBox="0 0 24 24" fill="none">' +
+              '<path d="M3.4 16.8l5.4-5.6 3.6 3.6 8-8.2" style="stroke:var(--ok);stroke-width:2.1" stroke-linecap="round" stroke-linejoin="round"/>' +
+              '<path d="M15.4 6.6h5v5" style="stroke:var(--ok);stroke-width:2.1" stroke-linecap="round" stroke-linejoin="round"/>' +
+            '</svg>'
+  };
+
+  /* 主数字旁的奖章：同心圆 + 五角星（纯实色，不用 url(#id) 渐变引用，避免导出失效） */
+  var MEDAL =
+    '<svg viewBox="0 0 64 64" width="64" height="64" fill="none">' +
+      '<circle cx="32" cy="32" r="27" style="fill:rgba(255,255,255,.10);stroke:var(--hero-line);stroke-width:1.4"/>' +
+      '<circle cx="32" cy="32" r="21" style="fill:var(--gold)"/>' +
+      '<circle cx="32" cy="32" r="21" style="fill:#FFFFFF;opacity:.14"/>' +
+      '<path d="M32 18.4l4.2 8.5 9.4 1.4-6.8 6.6 1.6 9.4L32 39.9l-8.4 4.4 1.6-9.4-6.8-6.6 9.4-1.4z" style="fill:#FFFFFF"/>' +
+    '</svg>';
+
+  var $ = function (id) { return document.getElementById(id); };
+
+  /* ---------- 主题：跟着 App 走 ---------- */
+  function readTheme() {
+    try {
+      var t = localStorage.getItem('xj-theme');
+      return t === 'dark' ? 'dark' : 'light';
+    } catch (e) { return 'light'; }
+  }
+  function applyTheme(t) {
+    document.documentElement.setAttribute('data-theme', t);
+    var p = $('poster');
+    if (t === 'dark') p.classList.add('dark'); else p.classList.remove('dark');
+    $('btnTheme').textContent = (t === 'dark' ? '预览浅色' : '预览深色');
+  }
+
+  /* ---------- 昵称：优先登录态，其次资料，最后兜底 ---------- */
+  function readNick() {
+    try {
+      var s = JSON.parse(localStorage.getItem('xj-session') || 'null');
+      if (s && s.name) return s.name;
+      var p = JSON.parse(localStorage.getItem('xj-profile') || 'null');
+      if (p && p.nickname) return p.nickname;
+    } catch (e) {}
+    return '小宇';
+  }
+
+  /* ---------- 渲染 ---------- */
+  function render() {
+    var nick = readNick();
+    $('pNick').textContent = nick;
+    $('pAva').textContent  = nick.charAt(0);
+
+    $('pWeek').textContent   = WEEKLY.week;
+    $('pStreak').textContent = WEEKLY.streak;
+    $('pTitle').textContent  = WEEKLY.title || '稳进者';
+    $('pRate').textContent   = WEEKLY.completeRate + '%';
+    $('pAcc').textContent    = WEEKLY.accuracy + '%';
+    $('pWord').textContent   = WEEKLY.words;
+    $('pSum').textContent    = WEEKLY.summary;
+    $('pTip1').textContent   = WEEKLY.tips[0] || '';
+    $('pTip2').textContent   = WEEKLY.tips[1] || '';
+    $('pMade').textContent   = '学迹 · ' + WEEKLY.madeAt + '生成';
+    $('pMedal').innerHTML    = MEDAL;
+
+    /* 成就徽章：由本周数据实时判定，未解锁的置灰（留出目标感） */
+    var badges = [
+      { n: '全勤王',   ic: 'shield', on: WEEKLY.completeRate >= 80 },
+      { n: '单词达人', ic: 'book',   on: WEEKLY.words        >= 30 },
+      { n: '准确王',   ic: 'target', on: WEEKLY.accuracy     >= 85 },
+      { n: '稳进者',   ic: 'rise',   on: WEEKLY.streak       >= 5  }
+    ];
+    var bh = '';
+    for (var b = 0; b < badges.length; b++) {
+      bh += '<div class="p-bd' + (badges[b].on ? '' : ' off') + '">' +
+              ICONS[badges[b].ic] + '<span>' + badges[b].n + '</span>' +
+            '</div>';
+    }
+    $('pBadges').innerHTML = bh;
+
+    /* 各科正确率：升序排（最弱在最上），最弱一科标金；颜色走九科令牌 */
+    var subs = WEEKLY.subjects.slice().sort(function (a, c) { return a.rate - c.rate; });
+    var min  = subs.length ? subs[0].rate : 0;
+    var rows = '';
+    for (var i = 0; i < subs.length; i++) {
+      var s = subs[i];
+      var k = s.key || SUB_KEY[s.name] || 'math';
+      /* 并列最低时只标第一个，保证整张海报只有一个金 */
+      var weak = (s.rate === min && rows.indexOf('weak') < 0);
+      var col  = weak ? 'var(--gold)' : 'var(--c-' + k + ')';
+      rows +=
+        '<div class="p-row' + (weak ? ' weak' : '') + '">' +
+          '<span class="p-dot" style="background:' + col + '"></span>' +
+          '<span class="p-sub">' + s.name + '</span>' +
+          '<span class="p-track"><i style="width:' + s.rate + '%;background:' + col + '"></i></span>' +
+          '<b>' + s.rate + '%</b>' +
+        '</div>';
+    }
+    $('pRows').innerHTML = rows;
+
+    /* 一周节奏：柱高按任务数分四档（品牌色 + 透明度分级），最高那天改金 */
+    var max = 1;
+    for (var j = 0; j < WEEKLY.days.length; j++) {
+      if (WEEKLY.days[j].n > max) max = WEEKLY.days[j].n;
+    }
+    var OP = [0.32, 0.52, 0.76, 1];
+    var bars = '';
+    for (var k2 = 0; k2 < WEEKLY.days.length; k2++) {
+      var day = WEEKLY.days[k2];
+      var lv  = day.n === 0 ? 1 : Math.max(1, Math.min(4, Math.round(day.n / max * 4)));
+      var top = (day.n === max && max > 0);
+      var h   = top ? 46 : (10 + lv * 8);
+      var st  = top ? '' : ('opacity:' + OP[lv - 1] + ';');
+      bars +=
+        '<div class="p-b' + (top ? ' top' : '') + '">' +
+          '<i style="' + st + 'height:' + h + 'px"></i>' +
+          '<span>' + day.d + '</span>' +
+        '</div>';
+    }
+    $('pBars').innerHTML = bars;
+  }
+
+  /* ---------- 窄屏等比缩放 ----------
+     不用 zoom（部分环境不生效）：transform 缩放视觉，
+     同时把 stage 的布局盒改成缩放后的尺寸，保证 flex 居中正确 */
+  function fit() {
+    /* 必须用 innerWidth：海报溢出时 clientWidth 会被撑大，越算越错 */
+    var avail = window.innerWidth - 32;
+    var s = Math.min(1, avail / 540);
+    var stage = $('stage');
+    if (s >= 1) {
+      stage.style.transform = '';
+      stage.style.width = '';
+      stage.style.height = '';
+      return;
+    }
+    stage.style.transform = 'scale(' + s + ')';
+    stage.style.transformOrigin = 'top left';
+    stage.style.width = (540 * s) + 'px';
+    stage.style.height = (720 * s) + 'px';
+  }
+
+  /* ---------- 导出：零依赖，SVG foreignObject → canvas ---------- */
+  function exportPng(cb) {
+    var el = document.getElementById('poster');
+    var css = document.getElementById('poster-style').textContent;
+    var dark = el.classList.contains('dark');
+
+    var xml;
+    try {
+      xml = new XMLSerializer().serializeToString(el);
+    } catch (e) {
+      return cb(new Error('serialize failed'));
+    }
+
+    var svg =
+      '<svg xmlns="http://www.w3.org/2000/svg" width="1080" height="1440" viewBox="0 0 540 720">' +
+        '<foreignObject x="0" y="0" width="540" height="720">' +
+          '<div xmlns="http://www.w3.org/1999/xhtml">' +
+            '<style>' + css + '<\/style>' + xml +
+          '</div>' +
+        '</foreignObject>' +
+      '</svg>';
+
+    var img = new Image();
+    img.onload = function () {
+      var canvas = document.createElement('canvas');
+      canvas.width = 1080;
+      canvas.height = 1440;
+      var ctx = canvas.getContext('2d');
+      ctx.fillStyle = dark ? '#171A20' : '#FFFFFF';
+      ctx.fillRect(0, 0, 1080, 1440);
+      ctx.drawImage(img, 0, 0, 1080, 1440);
+      cb(null, canvas.toDataURL('image/png'));
+    };
+    img.onerror = function () { cb(new Error('render failed')); };
+    img.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svg);
+  }
+
+  /* ---------- 反馈 ---------- */
+  var toastTimer = null;
+  function toast(msg) {
+    var t = $('toast');
+    t.textContent = msg;
+    t.classList.add('on');
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(function () { t.classList.remove('on'); }, 2200);
+  }
+
+  /* ---------- 事件 ---------- */
+  $('btnSave').addEventListener('click', function () {
+    var btn = this;
+    btn.disabled = true;
+    btn.textContent = '生成中…';
+
+    exportPng(function (err, url) {
+      btn.disabled = false;
+      btn.textContent = '保存图片';
+
+      if (err) {
+        toast('导出失败，可以截图保存这一页');
+        return;
+      }
+
+      $('maskImg').src = url;
+      $('mask').hidden = false;
+
+      /* 桌面端顺带直接触发一次下载，手机上靠长按保存 */
+      try {
+        var a = document.createElement('a');
+        a.href = url;
+        a.download = '学迹周报-2026W41.png';
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+      } catch (e) {}
+    });
+  });
+
+  /* 临时预览另一套主题（只影响本页，不写回 App 设置） */
+  $('btnTheme').addEventListener('click', function () {
+    applyTheme($('poster').classList.contains('dark') ? 'light' : 'dark');
+  });
+
+  $('btnBack').addEventListener('click', function () {
+    if (history.length > 1) history.back();
+    else location.href = 'me.html';
+  });
+
+  $('btnClose').addEventListener('click', function () {
+    $('mask').hidden = true;
+    $('maskImg').src = '';
+  });
+
+  window.addEventListener('resize', fit);
+
+  /* ---------- 启动 ---------- */
+  applyTheme(readTheme());
+  render();
+  fit();
+
+  /* 调试钩子：无头验证时直接取 dataURL */
+  window.__exportPoster = exportPng;
+  window.__setTheme    = applyTheme;
+}());
+</script>
+</body>
+</html>

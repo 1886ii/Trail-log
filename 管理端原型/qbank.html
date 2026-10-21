@@ -1,0 +1,650 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="light">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#F5F6F8">
+<title>题库与出题 · 学迹管理端</title>
+<link rel="stylesheet" href="style.css?v=20261021c">
+</head>
+<body data-page="qbank" data-title="题库与出题" data-sub="九门科目 × 三个年级 · 四类模板覆盖全学科，AI 出题自动预筛">
+
+<div class="app">
+  <aside class="sb" id="sb"></aside>
+  <div class="main">
+    <header class="tb" id="tb"></header>
+    <div class="content">
+
+      <section class="sec">
+        <div class="sec-title">
+          <span>题库</span><span class="count" id="cnt"></span>
+          <span class="right">
+            <input class="inp inp-sm" id="kw" placeholder="搜知识点 / 题干" style="width:160px">
+            <button class="btn btn-primary btn-sm" id="ai-gen">AI 出题</button>
+            <button class="btn btn-sm" id="manual">手动录入</button>
+          </span>
+        </div>
+
+        <!-- 筛选条：九门科目 × 三个年级 × 状态 -->
+        <div class="fbar">
+          <div class="fbar-row">
+            <span class="fbar-lb">科目</span>
+            <div class="seg wrap" id="f-subj"></div>
+          </div>
+          <div class="fbar-row">
+            <span class="fbar-lb">年级</span>
+            <div class="seg wrap" id="f-grade"></div>
+            <span class="fbar-lb" style="margin-left:16px">状态</span>
+            <div class="seg wrap" id="f-status">
+              <button class="on" data-val="all">全部状态</button>
+              <button data-val="approved">已入库</button>
+              <button data-val="pending">待审核</button>
+              <button data-val="rejected">已退回</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="tbl-wrap">
+          <table class="tbl">
+            <thead>
+              <tr>
+                <th>题目</th><th>科目 / 年级</th><th>模板</th><th>难度</th>
+                <th>状态 / 置信</th><th class="num">使用</th><th class="num">正确率</th><th style="text-align:right">操作</th>
+              </tr>
+            </thead>
+            <tbody id="rows"></tbody>
+          </table>
+        </div>
+
+        <p class="hint">
+          模板口径（<code>题目模板精简版 v1</code>）：<b>T1 选择</b> · <b>T2 填空</b> · <b>T3 简答</b> · <b>T4 材料/阅读题组</b>，
+          T5 写作题在作文模块单独做。每道题都标了<b>年级</b>，筛选与出题都按「科目 + 年级」定位；
+          AI 出题后：置信 ≥ <span id="th"></span> 的直接入库（可抽查），低于阈值的进入「审核队列」等你过一眼；被举报 ≥ 3 次的自动下架。
+        </p>
+        <p class="hint">
+          <b>配图</b>：需要图（几何图 / 装置图 / 图表 / 文言文图片）的题，在题干下方点「添加图片」选文件，或截图后直接 <b>Ctrl + V</b> 粘贴；
+          每个题干 / 材料 / 子题各最多 3 张，点缩略图可看大图、右上角 × 删除。原型期图片压到最长边 1280 存在本机
+          <span id="img-stat"></span>；正式版改为上传服务返回图片地址，学生端答题时同位置展示。
+        </p>
+      </section>
+
+    </div>
+  </div>
+</div>
+
+<script src="demo.js?v=20261021c"></script>
+<script src="admin.js?v=20261021c"></script>
+<script>
+(function () {
+  var E = ADMIN.esc, I = ADMIN.icon;
+  var fSubj = '全部', fGrade = '全部', fStatus = 'all', kw = '';
+  var TYPE = { T1: '选择题', T2: '填空题', T3: '简答题', T4: '材料题组' };
+  /* T4 子题可用的三种题型 */
+  var SUBQ_TYPE = { choice: '选择题', fill: '填空题', short: '简答题' };
+  var SUBQ_DEF  = { choice: 3, fill: 4, short: 6 };
+  /* 九门科目（三主科 + 六门 P5 科目，均可在题库里出题） */
+  var SUBJECTS = ['数学', '语文', '英语', '物理', '化学', '生物', '历史', '道德与法治', '地理'];
+  var GRADES   = ['初一', '初二', '初三'];
+  /* 科目色组：语数英 / 物化生 / 史道地 */
+  function subjCls(s) {
+    if (s === '数学' || s === '语文' || s === '英语') return 'sj-a';
+    if (s === '物理' || s === '化学' || s === '生物') return 'sj-b';
+    return 'sj-c';
+  }
+  document.getElementById('th').textContent = DB.get('settings', {}).autoPass;
+
+  var all = function () { return DB.get('qbank', []); };
+
+  /* 先按「除自身外的其它条件」统计，让计数反映真实可选数量 */
+  function countBy(key) {
+    var out = {};
+    all().forEach(function (q) {
+      if (kw && (q.kp + q.stem).replace(/<[^>]+>/g, '').indexOf(kw) < 0) return;
+      if (key !== 'subject' && fSubj !== '全部' && q.subject !== fSubj) return;
+      if (key !== 'grade'   && fGrade !== '全部' && q.grade !== fGrade) return;
+      if (key !== 'status'  && fStatus !== 'all' && q.status !== fStatus) return;
+      var v = q[key];
+      out[v] = (out[v] || 0) + 1;
+    });
+    return out;
+  }
+
+  /* ---------- 生成筛选按钮（带数量） ---------- */
+  function buildFilters() {
+    var cs = countBy('subject'), cg = countBy('grade');
+    var total = 0;
+    all().forEach(function (q) {
+      if ((fGrade === '全部' || q.grade === fGrade) && (fStatus === 'all' || q.status === fStatus) &&
+          (!kw || (q.kp + q.stem).replace(/<[^>]+>/g, '').indexOf(kw) >= 0)) total++;
+    });
+    var html = '<button data-val="全部" class="' + (fSubj === '全部' ? 'on' : '') + '">全部<i>' + total + '</i></button>';
+    SUBJECTS.forEach(function (s) {
+      var n = cs[s] || 0;
+      html += '<button data-val="' + s + '"' + (fSubj === s ? ' class="on"' : '') +
+        (n ? '' : ' style="opacity:.45"') + '>' + E(s) + '<i>' + n + '</i></button>';
+    });
+    document.getElementById('f-subj').innerHTML = html;
+
+    var gTot = 0;
+    all().forEach(function (q) {
+      if ((fSubj === '全部' || q.subject === fSubj) && (fStatus === 'all' || q.status === fStatus) &&
+          (!kw || (q.kp + q.stem).replace(/<[^>]+>/g, '').indexOf(kw) >= 0)) gTot++;
+    });
+    var ghtml = '<button data-val="全部" class="' + (fGrade === '全部' ? 'on' : '') + '">全部<i>' + gTot + '</i></button>';
+    GRADES.forEach(function (g) {
+      var n = cg[g] || 0;
+      ghtml += '<button data-val="' + g + '"' + (fGrade === g ? ' class="on"' : '') +
+        (n ? '' : ' style="opacity:.45"') + '>' + E(g) + '<i>' + n + '</i></button>';
+    });
+    document.getElementById('f-grade').innerHTML = ghtml;
+  }
+
+  function list() {
+    return all().filter(function (q) {
+      if (fSubj !== '全部' && q.subject !== fSubj) return false;
+      if (fGrade !== '全部' && q.grade !== fGrade) return false;
+      if (fStatus !== 'all' && q.status !== fStatus) return false;
+      if (kw && (q.kp + q.stem).replace(/<[^>]+>/g, '').indexOf(kw) < 0) return false;
+      return true;
+    }).sort(function (a, b) { return b.at - a.at; });
+  }
+
+  function statusCell(q) {
+    if (q.status === 'approved') return '<span class="chip ok">已入库</span>' +
+      '<div class="conf" style="margin-top:5px"><div class="bar"><i class="ok" style="--w:' + Math.round(q.conf * 100) + '%"></i></div>' +
+      '<span class="conf-val">' + q.conf.toFixed(2) + '</span></div>';
+    if (q.status === 'pending') return '<span class="chip warn">待审核</span>' +
+      '<div class="conf" style="margin-top:5px"><div class="bar"><i class="warn" style="--w:' + Math.round(q.conf * 100) + '%"></i></div>' +
+      '<span class="conf-val">' + q.conf.toFixed(2) + '</span></div>';
+    return '<span class="chip danger">已退回</span><div class="t-sub">' + E(q.rejectReason || '') + '</div>';
+  }
+
+  function render() {
+    buildFilters();
+    var rows = list();
+    document.getElementById('cnt').textContent = '· ' + rows.length + ' 道' +
+      (fSubj === '全部' && fGrade === '全部' && fStatus === 'all' && !kw ? '（共 ' + all().length + '）' : ' / 共 ' + all().length);
+    document.getElementById('rows').innerHTML = rows.length ? rows.map(function (q) {
+      var text = q.stem.replace(/<[^>]+>/g, '');
+      var nImg = (q.stemImgs || []).length +
+        (q.subs || []).reduce(function (a, s) { return a + (s.imgs || []).length; }, 0);
+      return '<tr data-id="' + q.id + '">' +
+        '<td style="max-width:300px"><div class="t-main">' + E(text.slice(0, 32)) + (text.length > 32 ? '…' : '') + '</div>' +
+          '<div class="t-sub">' + E(q.id) + ' · ' + E(q.kp) + ' · ' + E(q.source) +
+          (nImg ? ' · <span class="g-chip">图 ' + nImg + '</span>' : '') + '</div></td>' +
+        '<td><span class="chip ' + subjCls(q.subject) + '">' + E(q.subject) + '</span>' +
+          '<div class="t-sub">' + E(q.grade || '—') + '</div></td>' +
+        '<td><span class="chip line">' + q.type + ' ' + TYPE[q.type] + '</span></td>' +
+        '<td>' + E(q.difficulty) + '<div class="t-sub">' + q.score + ' 分</div></td>' +
+        '<td>' + statusCell(q) + '</td>' +
+        '<td class="num">' + q.used + '</td>' +
+        '<td class="num">' + (q.right ? Math.round(q.right * 100) + '%' : '—') + '</td>' +
+        '<td class="t-act">' +
+          (q.status === 'pending' ? '<a class="btn btn-xs btn-primary" href="review.html">去审</a> ' : '') +
+          '<button class="btn btn-xs btn-ghost" data-act="view">预览</button> ' +
+          '<button class="btn btn-xs btn-ghost" data-act="del">' + I('trash') + '</button>' +
+        '</td></tr>';
+    }).join('') : '<tr><td colspan="8"><div class="empty"><div class="ico">' + I('db') + '</div>' +
+      '<div class="empty-title">没有匹配的题目</div><div class="empty-sub">换科目 / 年级 / 状态，或用 AI 出一批</div></div></td></tr>';
+  }
+
+  /* ---------- 题目预览抽屉 ---------- */
+  function viewQ(q) {
+    var body = '<div class="q-prev"><div class="q-stem"><span class="chip line">' + q.type + ' ' + TYPE[q.type] + '</span> ' +
+      '<span class="chip ' + subjCls(q.subject) + '">' + E(q.subject) + '</span> <span class="chip">' + E(q.grade || '—') + '</span> ' +
+      '<span class="chip">' + E(q.difficulty) + '</span> <span class="chip">' + q.score + ' 分</span>' +
+      '<div style="margin-top:10px">' + q.stem.replace(/\{\{1\}\}/g, '<span class="q-blank"></span>').replace(/\{\{2\}\}/g, '<span class="q-blank"></span>') + '</div>' +
+      figs(q.stemImgs) + '</div>';
+    if (q.options) {
+      body += '<div class="q-opts">' + q.options.map(function (o, i) {
+        var k = 'ABCD'[i];
+        return '<div class="q-opt' + (q.answer.indexOf(k) >= 0 ? ' right' : '') + '"><span class="k">' + k + '.</span><span>' + o + '</span></div>';
+      }).join('') + '</div>';
+    }
+    if (q.blanks) body += '<p class="q-ans">参考答案：' + q.blanks.map(E).join(' / ') + '</p>';
+    if (q.points) body += '<p class="q-ans">采分点：' + q.points.map(function (p) { return E(p.label); }).join('；') + '</p>';
+    /* T4：材料题组的子题（选择 / 填空 / 简答） */
+    if (q.subs && q.subs.length) {
+      var bl = function (s) { return String(s || '').replace(/\{\{(\d)\}\}/g, '<span class="q-blank"></span>'); };
+      body += q.subs.map(function (s, i) {
+        var h = '<div class="q-sub"><div class="q-sub-h">' +
+          '<span class="chip line">小题 ' + (i + 1) + '</span>' +
+          '<span class="chip">' + E(SUBQ_TYPE[s.type] || s.type) + '</span>' +
+          '<span class="chip">' + (s.score || 0) + ' 分</span></div><div>' + bl(s.stem) + '</div>' + figs(s.imgs);
+        if (s.options) h += '<div class="q-opts">' + s.options.map(function (o, k) {
+          var kk = 'ABCD'[k];
+          return '<div class="q-opt' + (String(s.answer || '').indexOf(kk) >= 0 ? ' right' : '') +
+            '"><span class="k">' + kk + '.</span><span>' + o + '</span></div>';
+        }).join('') + '</div>';
+        if (s.blanks) h += '<p class="q-ans">参考答案：' + s.blanks.map(E).join(' / ') + '</p>';
+        if (s.points) h += '<p class="q-ans">采分点：' + s.points.map(function (p) { return E(p.label); }).join('；') + '</p>';
+        return h + '</div>';
+      }).join('');
+    }
+    if (q.note) body += '<p class="q-ans">补充说明：' + E(q.note) + '</p>';
+    body += '<p class="q-expl">' + q.expl + '</p></div>' +
+      '<div class="kv" style="margin-top:14px">' +
+      '<div class="kv-row"><div class="kv-k">科目 / 年级</div><div class="kv-v">' + E(q.subject) + ' · ' + E(q.grade || '—') + '</div></div>' +
+      '<div class="kv-row"><div class="kv-k">来源</div><div class="kv-v">' + E(q.by) + '</div></div>' +
+      '<div class="kv-row"><div class="kv-k">AI 置信</div><div class="kv-v">' + q.conf.toFixed(2) + '</div></div>' +
+      '<div class="kv-row"><div class="kv-k">使用 / 正确率</div><div class="kv-v">' + q.used + ' 次 · ' +
+        (q.right ? Math.round(q.right * 100) + '%' : '—') + '</div></div>' +
+      (q.flag ? '<div class="kv-row"><div class="kv-k">AI 备注</div><div class="kv-v" style="color:var(--warn)">' + E(q.flag) + '</div></div>' : '') +
+      '</div>';
+    ADMIN.drawer({ title: q.id + ' · 题目预览', body: body });
+  }
+
+  /* ---------- 生成一组下拉选项 ---------- */
+  function opts(arr, sel) {
+    return arr.map(function (v) { return '<option' + (v === sel ? ' selected' : '') + '>' + v + '</option>'; }).join('');
+  }
+
+  /* ---------- T4 子题编辑器（选择 / 填空 / 简答共用一套） ---------- */
+  function subqHTML(i, type) {
+    type = type || 'short';
+    var seg = ['choice', 'fill', 'short'].map(function (t) {
+      return '<button type="button" data-val="' + t + '"' + (t === type ? ' class="on"' : '') + '>' + SUBQ_TYPE[t] + '</button>';
+    }).join('');
+    return '<div class="subq" data-i="' + i + '">' +
+      '<div class="subq-head">' +
+        '<span class="subq-no">第 <b class="sq-i">' + (i + 1) + '</b> 题</span>' +
+        '<div class="seg" data-role="type">' + seg + '</div>' +
+        '<span class="subq-score">分值 <input class="inp" type="number" min="1" max="20" data-role="score" value="' + SUBQ_DEF[type] + '"></span>' +
+        '<button type="button" class="btn btn-xs btn-ghost subq-del" title="删除本题">' + I('trash') + '</button>' +
+      '</div>' +
+      '<textarea class="ta" data-role="stem" placeholder="子题题干' + (type === 'fill' ? '（空位用 {{1}} {{2}} 标记）' : '') + '"></textarea>' +
+      ADMIN.imgs.html({ label: '子题配图' }) +
+      '<div class="subq-body' + (type === 'choice' ? ' on' : '') + '" data-body="choice">' +
+        '<textarea class="ta" data-role="opts" placeholder="选项，每行一个；第一行为正确答案"></textarea></div>' +
+      '<div class="subq-body' + (type === 'fill' ? ' on' : '') + '" data-body="fill">' +
+        '<textarea class="ta" data-role="ans" placeholder="各空答案，每行一个，与 {{1}} {{2}} 顺序对应"></textarea></div>' +
+      '<div class="subq-body' + (type === 'short' ? ' on' : '') + '" data-body="short">' +
+        '<textarea class="ta" data-role="points" placeholder="采分点，每行一个"></textarea></div>' +
+    '</div>';
+  }
+  /* 多行文本 → 去空数组 */
+  function linesOf(s) { return (s || '').split('\n').map(function (x) { return x.trim(); }).filter(Boolean); }
+  /* 图区读取：scope 内第一个图区的图片引用（无图返回空数组） */
+  function imgsOf(scope) {
+    return scope ? ADMIN.imgs.read(scope.querySelector('.imgbox[data-imgs]')) : [];
+  }
+  /* 预览用：图片引用 → 图片行（引用拿不到实体时自动跳过） */
+  function figs(refs, label) {
+    if (!refs || !refs.length) return '';
+    var srcs = refs.map(function (r) { return ADMIN.imgs.src(r); }).filter(Boolean);
+    if (!srcs.length) return '';
+    return '<div class="q-figs">' + (label ? '<span class="q-fig-lb">' + E(label) + '</span>' : '') +
+      srcs.map(function (s) { return '<img src="' + s + '" alt="题目配图">'; }).join('') + '</div>';
+  }
+  /* 采分点文本行 → { label, k }（k 取前 3 个关键词） */
+  function toPoints(arr) {
+    return arr.map(function (p) {
+      return { label: p, k: p.replace(/[（(].*?[)）]/g, '').split(/[、，,]/).filter(Boolean).slice(0, 3) };
+    });
+  }
+
+  /* ---------- AI 出题 ---------- */
+  document.getElementById('ai-gen').addEventListener('click', function () {
+    var stu = ADMIN.currentStudent() || {};
+    var weak = DB.get('weak', {})[ADMIN.currentId()] || [];
+    var wkp = weak.length ? weak[0].kp : '';
+    var defGrade = stu.grade || DB.get('settings', {}).defaultGrade || '初三';
+    var defSubj  = fSubj !== '全部' ? fSubj : (stu.subject || '数学');
+    var defType  = 'T1';
+
+    ADMIN.drawer({
+      title: 'AI 出题',
+      body: '<div class="form-grid">' +
+        '<div class="ai-bar">' + I('sparkle') + '<span>按「科目 + 年级 + 学生薄弱知识点」生成，生成后自动预筛</span></div>' +
+        '<div class="form-grid two">' +
+          '<div class="field"><label>科目<span class="req">*</span></label><select class="sel" id="g-subject">' +
+            opts(SUBJECTS, defSubj) + '</select></div>' +
+          '<div class="field"><label>年级<span class="req">*</span></label><select class="sel" id="g-grade">' +
+            opts(GRADES, defGrade) + '</select></div>' +
+        '</div>' +
+        '<div class="form-grid two">' +
+          '<div class="field"><label>题型模板</label><select class="sel" id="g-type">' +
+            '<option value="T1">T1 选择题</option><option value="T2">T2 填空题</option>' +
+            '<option value="T3">T3 简答题</option><option value="T4">T4 材料 / 阅读题组</option></select></div>' +
+          '<div class="field"><label>数量</label><select class="sel" id="g-n">' +
+            [3, 5, 10].map(function (n) { return '<option' + (n === 5 ? ' selected' : '') + '>' + n + '</option>'; }).join('') + '</select></div>' +
+        '</div>' +
+        '<div class="field"><label>知识点 / 范围<span class="req">*</span></label>' +
+          '<input class="inp" id="g-kp" value="' + E(wkp) + '" placeholder="如：二次函数 · 图象与系数关系">' +
+          (wkp ? '<div class="hint">已自动带入当前学生最薄弱的知识点，可改</div>'
+               : '<div class="hint">当前学生暂无薄弱点记录，请手动填写知识点</div>') + '</div>' +
+        '<div class="field"><label>难度</label><div class="seg" id="g-diff">' +
+          ['易', '中', '难'].map(function (v) {
+            return '<button type="button" data-val="' + v + '" class="' + (v === '中' ? 'on' : '') + '">' + v + '</button>';
+          }).join('') + '</div></div>' +
+        '</div>',
+      foot: '<button class="btn" data-x="no">取消</button><button class="btn btn-primary" data-x="go">' + I('sparkle') + '开始生成</button>',
+      onMount: function (dd) {
+        ADMIN.seg('#g-diff');
+        dd.querySelector('[data-x="no"]').addEventListener('click', ADMIN.closeDrawer);
+        dd.querySelector('[data-x="go"]').addEventListener('click', function () {
+          var kp = dd.querySelector('#g-kp').value.trim();
+          if (!kp) { ADMIN.toast('请填写知识点', 'warn'); return; }
+          var subject = dd.querySelector('#g-subject').value;
+          var grade   = dd.querySelector('#g-grade').value;
+          var type = dd.querySelector('#g-type').value;
+          var n = +dd.querySelector('#g-n').value;
+          var diff = ADMIN.segVal(dd.querySelector('#g-diff')) || '中';
+          var foot = dd.querySelector('[data-x="go"]');
+          foot.disabled = true;
+          foot.innerHTML = '生成中<span class="dots"><i></i><i></i><i></i></span>';
+          setTimeout(function () {
+            var list = DB.get('qbank', []);
+            var okN = 0, waitN = 0;
+            var pass = DB.get('settings', {}).autoPass;
+            for (var i = 0; i < n; i++) {
+              var conf = +(0.55 + Math.random() * 0.43).toFixed(2);   /* 0.55 ~ 0.98 */
+              if (conf >= pass) okN++; else waitN++;
+              list.unshift({
+                id: 'Q-' + (1100 + Math.floor(Math.random() * 800)),
+                subject: subject, grade: grade, type: type, kp: kp,
+                star: diff === '难' ? 3 : (diff === '易' ? 1 : 2),
+                difficulty: diff, score: type === 'T4' ? 12 : (type === 'T3' ? 6 : 3),
+                status: conf >= pass ? 'approved' : 'pending',
+                conf: conf, source: 'AI', by: 'AI · 刚刚生成', at: Date.now(),
+                stem: '（' + grade + subject + ' · ' + kp + '）AI 生成题目第 ' + (i + 1) + ' 题的题干示例，正式版由大模型按模板生成完整内容。',
+                subs: type === 'T4' ? [
+                  { type: 'choice', score: 3, stem: '（AI 子题 1）根据材料，下列说法正确的是（　）',
+                    options: ['选项 A', '选项 B', '选项 C', '选项 D'], answer: 'A' },
+                  { type: 'fill', score: 3, stem: '（AI 子题 2）材料体现的核心结论是 {{1}}。',
+                    blanks: ['（待生成）'], answer: '（待生成）' },
+                  { type: 'short', score: 6, stem: '（AI 子题 3）结合材料，简述你的看法。',
+                    points: [{ label: '答出核心观点', k: ['观点'] }, { label: '结合材料论证', k: ['材料'] }] }
+                ] : undefined,
+                options: type === 'T1' ? ['选项 A', '选项 B', '选项 C', '选项 D'] : undefined,
+                answer: type === 'T1' ? 'A' : '（生成后自动给出）',
+                expl: 'AI 生成的解析示例：会引用课本对应小节，并按采分点拆解。', used: 0, right: 0,
+                flag: conf < pass ? 'AI 置信 ' + conf.toFixed(2) + '：低于阈值，请人工核对' : null
+              });
+            }
+            DB.set('qbank', list);
+            ADMIN.closeDrawer();
+            ADMIN.toast('已生成 ' + n + ' 道（' + grade + subject + '）：直通 ' + okN + ' · 待审 ' + waitN);
+            setTimeout(function () { if (waitN) location.href = 'review.html'; else render(); }, 600);
+          }, 1300);
+        });
+      }
+    });
+  });
+
+  /* ---------- 手动录入（T1–T4 四类模板，选题型即换字段） ---------- */
+  document.getElementById('manual').addEventListener('click', function () {
+    var stu = ADMIN.currentStudent() || {};
+    var defGrade = stu.grade || DB.get('settings', {}).defaultGrade || '初三';
+    var defSubj = fSubj !== '全部' ? fSubj : (stu.subject || '数学');
+    var defType = 'T1';
+
+    ADMIN.drawer({
+      title: '手动录入题目',
+      body: '<div class="form-grid">' +
+        '<div class="form-grid two">' +
+          '<div class="field"><label>科目<span class="req">*</span></label><select class="sel" id="m-subject">' +
+            opts(SUBJECTS, defSubj) + '</select></div>' +
+          '<div class="field"><label>年级<span class="req">*</span></label><select class="sel" id="m-grade">' +
+            opts(GRADES, defGrade) + '</select></div>' +
+        '</div>' +
+        '<div class="form-grid two">' +
+          '<div class="field"><label>难度</label><div class="seg" id="m-diff">' +
+            ['易', '中', '难'].map(function (v) {
+              return '<button type="button" data-val="' + v + '" class="' + (v === '中' ? 'on' : '') + '">' + v + '</button>';
+            }).join('') + '</div></div>' +
+          '<div class="field"><label>分值</label><input class="inp" id="m-score" type="number" min="1" max="20" value="3"></div>' +
+        '</div>' +
+        '<div class="field"><label>题型模板<span class="req">*</span></label>' +
+          '<div class="seg wrap" id="m-type">' +
+            '<button type="button" class="on" data-val="T1">T1 选择题</button>' +
+            '<button type="button" data-val="T2">T2 填空题</button>' +
+            '<button type="button" data-val="T3">T3 简答题</button>' +
+            '<button type="button" data-val="T4">T4 材料题组</button>' +
+          '</div></div>' +
+        '<div class="field"><label>知识点<span class="req">*</span></label>' +
+          '<input class="inp" id="m-kp" placeholder="如：一元二次方程 · 配方法"></div>' +
+
+        /* T1 选择 */
+        '<div class="fset on" data-set="T1">' +
+          '<div class="field"><label>题干<span class="req">*</span>（可用 x<sup>2</sup> 上标写法）</label>' +
+            '<textarea class="ta" id="t1-stem" placeholder="方程 x^2 − 4x + 3 = 0 用配方法可化为（　）"></textarea>' +
+            ADMIN.imgs.html({ label: '题干配图', hint: '图形题 / 图表题的图放这里' }) + '</div>' +
+          '<div class="field"><label>选项（每行一个，<b>第一行为正确答案</b>）<span class="req">*</span></label>' +
+            '<textarea class="ta" id="t1-opts" placeholder="(x − 2)^2 = 1&#10;(x − 2)^2 = −1&#10;(x + 2)^2 = 1&#10;(x − 4)^2 = 13"></textarea>' +
+            '<div class="hint">存入时会自动把第一项打乱为 ABCD 中的正确项。</div></div>' +
+        '</div>' +
+
+        /* T2 填空 */
+        '<div class="fset" data-set="T2">' +
+          '<div class="field"><label>题干<span class="req">*</span>（空位用 <code>{{1}}</code> <code>{{2}}</code> 标记）</label>' +
+            '<textarea class="ta" id="t2-stem" placeholder="用化学用语填空：2 个氧原子 {{1}}；1 个水分子 {{2}}。"></textarea>' +
+            ADMIN.imgs.html({ label: '题干配图', hint: '如装置图、示意图' }) + '</div>' +
+          '<div class="field"><label>各空答案（每行一个，与 {{1}} {{2}} 顺序对应）<span class="req">*</span></label>' +
+            '<textarea class="ta" id="t2-ans" placeholder="2O&#10;H₂O"></textarea></div>' +
+        '</div>' +
+
+        /* T3 简答 */
+        '<div class="fset" data-set="T3">' +
+          '<div class="field"><label>题干<span class="req">*</span></label>' +
+            '<textarea class="ta" id="t3-stem" placeholder="简述秦朝为加强中央集权在政治上采取的主要措施。"></textarea>' +
+            ADMIN.imgs.html({ label: '题干配图', hint: '如历史地图、文言文图片' }) + '</div>' +
+          '<div class="field"><label>采分点（每行一个，判分时按关键词命中）<span class="req">*</span></label>' +
+            '<textarea class="ta" id="t3-points" placeholder="确立皇帝制度&#10;中央设三公（丞相、太尉、御史大夫）&#10;地方推行郡县制"></textarea></div>' +
+        '</div>' +
+
+        /* T4 材料题组：子题可选 选择 / 填空 / 简答 */
+        '<div class="fset" data-set="T4">' +
+          '<div class="field"><label>材料 / 阅读文本<span class="req">*</span></label>' +
+            '<textarea class="ta" id="t4-stem" placeholder="给出材料原文或图表描述，学生基于材料作答。"></textarea>' +
+            ADMIN.imgs.html({ label: '材料配图', hint: '图表 / 地图 / 统计图等，整组共用' }) + '</div>' +
+          '<div class="field"><label>子题（每题可独立选「选择 / 填空 / 简答」）<span class="req">*</span></label>' +
+            '<div class="subq-list" id="t4-list"></div>' +
+            '<button type="button" class="btn btn-sm t4-add" id="t4-add">+ 添加子题</button>' +
+            '<div class="t4-sum" id="t4-sum"></div></div>' +
+          '<div class="field"><label>补充说明（可选，整组共用）</label>' +
+            '<textarea class="ta" id="t4-note" placeholder="如：第 (2) 问需结合材料，言之有理即可。"></textarea></div>' +
+        '</div>' +
+
+        '<div class="field"><label>解析（学生端作答后展示）</label>' +
+          '<textarea class="ta" id="m-expl" placeholder="讲清「为什么」，可按采分点拆解。"></textarea></div>' +
+        '</div>',
+      foot: '<button class="btn" data-x="no">取消</button><button class="btn btn-primary" data-x="ok">存入题库</button>',
+      onMount: function (d) {
+        ADMIN.seg('#m-diff');
+        var mtype = 'T1';
+        var scoreEl = d.querySelector('#m-score');
+
+        /* ---- T4 子题编辑器：增删 + 三题型切换 + 分值合计 ---- */
+        var listEl = d.querySelector('#t4-list'), addBtn = d.querySelector('#t4-add'), sumEl = d.querySelector('#t4-sum');
+        function syncSum() {
+          var t = 0;
+          listEl.querySelectorAll('[data-role="score"]').forEach(function (x) { t += (+x.value || 0); });
+          sumEl.innerHTML = '整组合计 <b>' + t + '</b> 分' + (t ? '' : ' —— 请填写子题分值');
+          /* 只有停在 T4 上时才让合计接管外层分值 */
+          if (mtype === 'T4' && !scoreEl.dataset.touched) scoreEl.value = t || '';
+        }
+        function reindex() {
+          var items = listEl.querySelectorAll('.subq');
+          items.forEach(function (s, i) {
+            s.setAttribute('data-i', i);
+            var n = s.querySelector('.sq-i'); if (n) n.textContent = i + 1;
+          });
+          if (!items.length) listEl.innerHTML = '<div class="subq-empty">还没有子题 —— 点下面「添加子题」开始</div>';
+          syncSum();
+        }
+        function addSub(type) {
+          if (listEl.querySelector('.subq-empty')) listEl.innerHTML = '';
+          listEl.insertAdjacentHTML('beforeend', subqHTML(listEl.querySelectorAll('.subq').length, type));
+          reindex();
+        }
+        addBtn.addEventListener('click', function () { addSub('short'); });
+        listEl.addEventListener('click', function (e) {
+          var tb = e.target.closest('.seg[data-role="type"] button');
+          if (tb) {
+            var sq = tb.closest('.subq');
+            sq.querySelectorAll('.seg[data-role="type"] button').forEach(function (x) { x.classList.remove('on'); });
+            tb.classList.add('on');
+            var t = tb.getAttribute('data-val');
+            sq.querySelectorAll('.subq-body').forEach(function (x) { x.classList.toggle('on', x.getAttribute('data-body') === t); });
+            var sc = sq.querySelector('[data-role="score"]');
+            if (sc && !sc.dataset.touched) sc.value = SUBQ_DEF[t];
+            var st = sq.querySelector('[data-role="stem"]');
+            if (st) st.placeholder = '子题题干' + (t === 'fill' ? '（空位用 {{1}} {{2}} 标记）' : '');
+            syncSum();
+            return;
+          }
+          var db = e.target.closest('.subq-del');
+          if (db) {
+            if (listEl.querySelectorAll('.subq').length <= 1) { ADMIN.toast('至少保留一道子题', 'warn'); return; }
+            db.closest('.subq').remove(); reindex();
+          }
+        });
+        listEl.addEventListener('input', function (e) {
+          if (e.target.getAttribute('data-role') === 'score') { e.target.dataset.touched = '1'; syncSum(); }
+        });
+        addSub('short');                                /* 默认先给一道简答子题 */
+
+        function switchSet(t) {
+          mtype = t;
+          d.querySelectorAll('.fset').forEach(function (el) {
+            el.classList.toggle('on', el.getAttribute('data-set') === t);
+          });
+          if (t === 'T4') { scoreEl.dataset.touched = ''; syncSum(); return; }  /* T4 分值 = 子题合计 */
+          scoreEl.dataset.touched = '';
+          scoreEl.value = (t === 'T3' ? 6 : (t === 'T2' ? 4 : 3));
+        }
+        scoreEl.addEventListener('input', function () { scoreEl.dataset.touched = '1'; });
+        ADMIN.seg('#m-type', function (v) { switchSet(v); });
+
+        d.querySelector('[data-x="no"]').addEventListener('click', ADMIN.closeDrawer);
+        d.querySelector('[data-x="ok"]').addEventListener('click', function () {
+          var kp = d.querySelector('#m-kp').value.trim();
+          var subject = d.querySelector('#m-subject').value;
+          var grade = d.querySelector('#m-grade').value;
+          var diff = ADMIN.segVal(d.querySelector('#m-diff')) || '中';
+          var score = +scoreEl.value || (mtype === 'T4' ? 8 : (mtype === 'T3' ? 6 : 3));
+          var expl = d.querySelector('#m-expl').value.trim() || '（待补充解析）';
+          var val = function (id) { var el = d.querySelector(id); return el ? el.value.trim() : ''; };
+          var lines = function (id) { return val(id).split('\n').map(function (x) { return x.trim(); }).filter(Boolean); };
+          var item = {
+            id: 'Q-' + (1100 + Math.floor(Math.random() * 800)),
+            subject: subject, grade: grade, type: mtype, kp: kp,
+            star: diff === '难' ? 3 : (diff === '易' ? 1 : 2), difficulty: diff, score: score,
+            status: 'approved', conf: 1, source: '手动', by: '我 · 手动录入', at: Date.now(),
+            expl: expl, used: 0, right: 0
+          };
+          if (!kp) { ADMIN.toast('请填写知识点', 'warn'); return; }
+          /* 题干配图：T1–T3 取当前题型分区，T4 取「材料配图」 */
+          var stemIm = imgsOf(d.querySelector('.fset[data-set="' + mtype + '"]'));
+          if (stemIm.length) item.stemImgs = stemIm;
+          if (mtype === 'T1') {
+            var stem = val('#t1-stem');
+            var opts2 = lines('#t1-opts');
+            if (!stem || opts2.length < 2) { ADMIN.toast('题干、至少两个选项必填', 'warn'); return; }
+            item.stem = stem.replace(/\^2/g, '<sup>2</sup>');
+            item.options = opts2; item.answer = 'A';
+          } else if (mtype === 'T2') {
+            var stem2 = val('#t2-stem');
+            var ans2 = lines('#t2-ans');
+            if (!stem2 || !ans2.length) { ADMIN.toast('题干与各空答案必填', 'warn'); return; }
+            if (/\{\{1\}\}/.test(stem2) && !/\{\{\d\}\}/.test(stem2)) { ADMIN.toast('题干缺少 {{1}} 占位', 'warn'); return; }
+            item.stem = stem2; item.blanks = ans2; item.answer = ans2.join(' / ');
+          } else if (mtype === 'T3') {
+            var stem3 = val('#t3-stem');
+            var pts3 = lines('#t3-points');
+            if (!stem3 || !pts3.length) { ADMIN.toast('题干与至少一个采分点必填', 'warn'); return; }
+            item.stem = stem3;
+            item.points = pts3.map(function (p) { return { label: p, k: p.replace(/[（(].*?[)）]/g, '').split(/[、，,]/).filter(Boolean).slice(0, 3) }; });
+          } else {
+            var stem4 = val('#t4-stem');
+            if (!stem4) { ADMIN.toast('请填写材料 / 阅读文本', 'warn'); return; }
+            var subs4 = [], total4 = 0, bad4 = 0;
+            Array.prototype.forEach.call(d.querySelectorAll('#t4-list .subq'), function (el, i) {
+              var t = el.querySelector('.seg[data-role="type"] button.on').getAttribute('data-val');
+              var st = el.querySelector('[data-role="stem"]').value.trim();
+              var sc = +el.querySelector('[data-role="score"]').value || SUBQ_DEF[t];
+              if (!st) { if (!bad4) bad4 = i + 1; return; }
+              var o = { type: t, stem: st, score: sc };
+              var si = imgsOf(el);                 /* 子题自己的配图 */
+              if (si.length) o.imgs = si;
+              if (t === 'choice') {
+                o.options = linesOf(el.querySelector('[data-role="opts"]').value);
+                o.answer = 'A';
+                if (o.options.length < 2) { if (!bad4) bad4 = i + 1; return; }
+              } else if (t === 'fill') {
+                o.blanks = linesOf(el.querySelector('[data-role="ans"]').value);
+                o.answer = o.blanks.join(' / ');
+                if (!o.blanks.length) { if (!bad4) bad4 = i + 1; return; }
+              } else {
+                o.points = toPoints(linesOf(el.querySelector('[data-role="points"]').value));
+                if (!o.points.length) { if (!bad4) bad4 = i + 1; return; }
+              }
+              subs4.push(o); total4 += sc;
+            });
+            if (bad4) { ADMIN.toast('第 ' + bad4 + ' 题的题干或答案未填完整', 'warn'); return; }
+            if (!subs4.length) { ADMIN.toast('请至少添加一道子题', 'warn'); return; }
+            item.stem = stem4; item.subs = subs4; item.score = total4;
+            var note4 = val('#t4-note');
+            if (note4) item.note = note4;
+          }
+          var list = DB.get('qbank', []);
+          list.unshift(item);
+          DB.set('qbank', list);
+          ADMIN.closeDrawer();
+          ADMIN.toast('已存入题库：' + grade + subject + ' · ' + mtype);
+          render();
+        });
+      }
+    });
+  });
+
+  /* ---------- 列表事件 ---------- */
+  document.getElementById('rows').addEventListener('click', function (e) {
+    var b = e.target.closest('button[data-act]');
+    if (!b) return;
+    var tr = e.target.closest('tr');
+    var q = DB.get('qbank', []).filter(function (x) { return x.id === tr.getAttribute('data-id'); })[0];
+    if (!q) return;
+    if (b.getAttribute('data-act') === 'view') viewQ(q);
+    if (b.getAttribute('data-act') === 'del') {
+      ADMIN.confirm({
+        title: '删除这道题？', danger: true, ok: '删除',
+        text: q.id + ' 将从题库中移除。已发布到任务里的记录不受影响。',
+        onOk: function () {
+          DB.set('qbank', DB.get('qbank', []).filter(function (x) { return x.id !== q.id; }));
+          if (DB.imgGC) DB.imgGC();          /* 删题后回收孤儿配图 */
+          ADMIN.toast('已删除'); render();
+        }
+      });
+    }
+  });
+
+  /* 筛选：动态生成的按钮也要能被 ADMIN.seg 的事件委托接住 */
+  ADMIN.seg('#f-subj', function (v) { fSubj = v; render(); });
+  ADMIN.seg('#f-grade', function (v) { fGrade = v; render(); });
+  ADMIN.seg('#f-status', function (v) { fStatus = v; render(); });
+  document.getElementById('kw').addEventListener('input', function () { kw = this.value.trim(); render(); });
+
+  /* 支持从学生详情页带条件跳转 ?kp=xxx&grade=xxx&subject=xxx */
+  var m = location.search;
+  var qkp = (m.match(/[?&]kp=([^&]+)/) || [])[1];
+  var qgr = (m.match(/[?&]grade=([^&]+)/) || [])[1];
+  var qsj = (m.match(/[?&]subject=([^&]+)/) || [])[1];
+  if (qkp) { kw = decodeURIComponent(qkp); document.getElementById('kw').value = kw; }
+  if (qgr) { fGrade = decodeURIComponent(qgr); }
+  if (qsj) { fSubj = decodeURIComponent(qsj); }
+
+  /* 本机配图占用：只在打开页面时统计一次，避免每次渲染回读几 MB 的 base64 */
+  try {
+    var ist = DB.imgStat();
+    if (ist.n) {
+      document.getElementById('img-stat').textContent =
+        '（' + ist.n + ' 张 · 约 ' + (ist.bytes / 1048576).toFixed(1) + ' MB）';
+    }
+  } catch (e) {}
+  render();
+})();
+</script>
+</body>
+</html>

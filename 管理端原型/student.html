@@ -1,0 +1,532 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="light">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#F5F6F8">
+<title>学生详情 · 学迹管理端</title>
+<link rel="stylesheet" href="style.css?v=20261021c">
+</head>
+<body data-page="students" data-title="学生详情" data-sub="档案、权限、学习数据都在这一页">
+
+<div class="app">
+  <aside class="sb" id="sb"></aside>
+  <div class="main">
+    <header class="tb" id="tb"></header>
+    <div class="content">
+
+      <section class="sec" id="head"></section>
+
+      <div class="split">
+        <div>
+          <section class="sec">
+            <div class="sec-title">近 7 日学习活跃</div>
+            <div class="card">
+              <div class="spark" id="spark"></div>
+              <div class="grid g-3" style="margin-top:16px" id="wk"></div>
+            </div>
+          </section>
+
+          <section class="sec">
+            <div class="sec-title">科目掌握度 <span class="count">· 按知识点正确率推算</span></div>
+            <div class="card" id="mastery"></div>
+          </section>
+
+          <section class="sec">
+            <div class="sec-title">薄弱知识点 <span class="count">· 由孩子的作答实时算出来</span></div>
+            <div class="card" style="padding:6px 0" id="weak"></div>
+          </section>
+
+          <section class="sec">
+            <div class="sec-title">最近作答 <span class="count">· 做题流水</span>
+              <span class="right"><a class="btn btn-sm" href="submissions.html">看全部</a></span></div>
+            <div class="tbl-wrap">
+              <table class="tbl compact">
+                <thead><tr><th style="width:96px">时间</th><th style="width:64px">科目</th><th>知识点</th>
+                  <th style="width:64px">结果</th><th style="width:88px;text-align:right">用时</th></tr></thead>
+                <tbody id="subs"></tbody>
+              </table>
+            </div>
+          </section>
+
+          <section class="sec">
+            <div class="sec-title">每日任务完成记录 <span class="count">· 近 6 天</span>
+              <span class="right"><a class="btn btn-sm" href="tasks.html">发布今天的</a></span></div>
+            <div class="tbl-wrap">
+              <table class="tbl compact">
+                <thead><tr><th>日期</th><th>完成 / 总数</th><th>用时</th><th>当日正确率</th><th style="text-align:right">状态</th></tr></thead>
+                <tbody id="hist"></tbody>
+              </table>
+            </div>
+          </section>
+        </div>
+
+        <div>
+          <section class="sec">
+            <div class="sec-title">档案 <span class="count">· 与孩子端「编辑资料」同一套字段，两边都能改</span>
+              <span class="right"><button class="btn btn-sm" id="edit">编辑</button></span></div>
+            <div class="card"><div class="kv" id="profile"></div></div>
+          </section>
+
+          <section class="sec">
+            <div class="sec-title">用户端账号 <span class="count">· 建档时开好，孩子用它登录</span></div>
+            <div class="card">
+              <div class="kv" id="bind"></div>
+              <div style="margin-top:12px" id="bind-act"></div>
+            </div>
+          </section>
+
+          <section class="sec">
+            <div class="sec-title">功能权限 <span class="count">· 与上面的「可见范围」是两回事</span></div>
+            <div class="card" id="perm-card"></div>
+          </section>
+
+          <section class="sec">
+            <div class="sec-title">最近记录 <span class="count">· 你可见全部内容</span>
+              <span class="right"><a class="btn btn-sm btn-ghost" href="posts.html">全部 →</a></span></div>
+            <div class="card" style="padding:6px 0" id="posts"></div>
+          </section>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+<script src="demo.js?v=20261021c"></script>
+<script src="admin.js?v=20261021c"></script>
+<script>
+(function () {
+  var E = ADMIN.esc, I = ADMIN.icon;
+  var qid = (location.search.match(/[?&]id=([^&]+)/) || [])[1];
+  var students = DB.get('students', []);
+  var s = students.filter(function (x) { return x.id === qid; })[0] || ADMIN.currentStudent();
+
+  if (!s) {
+    document.querySelector('.content').innerHTML =
+      '<div class="empty"><div class="ico">' + I('users') + '</div>' +
+      '<div class="empty-title">没有找到这个学生</div>' +
+      '<div class="empty-sub">可能已被删除</div>' +
+      '<a class="btn btn-primary" style="margin-top:14px" href="students.html">回学生列表</a></div>';
+    return;
+  }
+
+  var isCur = s.id === ADMIN.currentId();
+  var isOff = s.status === 'disabled';
+  var daysLeft = s.examDate ? Math.max(0, Math.round((new Date(s.examDate) - Date.now()) / 86400000)) : null;
+
+  /* ---------- 头部 ---------- */
+  /* 真实学情（来自孩子端作答流水，不是手填的） */
+  var sub7 = DB.subStat(s.id, 7);
+  var mkS  = DB.mkStat(s.id);
+
+  document.getElementById('head').innerHTML =
+    (isOff ? '<div class="guest-bar" style="margin-bottom:14px">' +
+        '<span class="gb-ico">' + I('alert') + '</span>' +
+        '<span class="gb-txt">这个学生<b>已停用</b>：孩子端每个模块都会显示一把锁，数据都还在。点右上「恢复使用」即可继续。</span></div>' : '') +
+    '<div class="card">' +
+      '<div style="display:flex;align-items:flex-start;gap:16px;flex-wrap:wrap">' +
+        ADMIN.avatar(s, 'xl') +
+        '<div style="flex:1;min-width:220px">' +
+          '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">' +
+            '<span style="font-size:19px;font-weight:600">' + E(s.name) + '</span>' +
+            (s.realName ? '<span class="muted" style="font-size:13px">' + E(s.realName) + '</span>' : '') +
+            (s.tag ? '<span class="chip line">' + E(s.tag) + '</span>' : '') +
+            (isOff ? '<span class="chip danger">已停用</span>'
+                   : (s.activated ? '<span class="chip ok">已激活</span>' : '<span class="chip warn">待激活</span>')) +
+            (isCur ? '<span class="chip brand">当前学生</span>' : '') +
+          '</div>' +
+          '<div class="chipline" style="margin-top:8px">' +
+            '<span class="pill">' + E(s.grade) + ' ' + E(s.term || '') + '</span>' +
+            '<span class="pill">' + E(s.edition) + '</span>' +
+            '<span class="pill">账号 <b>' + E(s.account) + '</b></span>' +
+            '<span class="pill">主攻 <b>' + E(DB.mainSubject(s) || '—') + '</b></span>' +
+            '<span class="pill">目标合计 <b>' + DB.targetSum(s) + '</b> 分</span>' +
+            (daysLeft !== null ? '<span class="pill">距' + E(s.examName) + ' <b>' + daysLeft + '</b> 天</span>' : '') +
+            '<span class="pill">连续打卡 <b>' + s.streak + '</b> 天</span>' +
+            (sub7.n ? '<span class="pill">近 7 天做题 <b>' + sub7.n + '</b> 道 · 正确率 <b>' + sub7.right + '%</b></span>' : '') +
+            (mkS.open ? '<span class="pill">错题待订正 <b>' + mkS.open + '</b> 道</span>' : '') +
+          '</div>' +
+          '<div class="row-meta" style="margin-top:8px">当前单元：' + E(s.unit || '未设置') +
+            '　·　每日新词 ' + (s.wordPerDay || 8) + ' 个<span class="muted">（孩子自己设）</span></div>' +
+        '</div>' +
+        '<div class="btn-row">' +
+          '<button class="btn btn-sm" id="h-cur"' + (isCur ? ' disabled' : '') + '>' + (isCur ? '已是当前' : '切为当前') + '</button>' +
+          '<button class="btn btn-sm" id="h-edit">' + I('edit') + '编辑档案</button>' +
+          '<button class="btn btn-sm btn-primary" id="h-task">' + I('check') + '给 TA 发任务</button>' +
+          '<button class="btn btn-sm" id="h-off">' + (isOff ? '恢复使用' : '停用') + '</button>' +
+        '</div>' +
+      '</div>' +
+    '</div>';
+
+  document.getElementById('h-cur').addEventListener('click', function () {
+    ADMIN.setCurrent(s.id); ADMIN.toast('已切换当前学生：' + s.name); setTimeout(function () { location.reload(); }, 300);
+  });
+  document.getElementById('h-edit').addEventListener('click', editProfile);
+  document.getElementById('h-task').addEventListener('click', function () { location.href = 'tasks.html?sid=' + s.id; });
+  document.getElementById('h-off').addEventListener('click', toggleOff);
+
+  /* ---------- 活跃度 ---------- */
+  var act = DB.get('activity', {})[s.id] || [];
+  var maxMin = Math.max.apply(null, act.map(function (d) { return d.min; }).concat([1]));
+  document.getElementById('spark').innerHTML = act.length ? act.map(function (d) {
+    return '<div class="spark-col" title="' + d.d + ' · ' + d.min + ' 分钟">' +
+      '<div class="spark-bar" style="height:100%"><i style="--h:' + Math.round(d.min / maxMin * 100) + '%"></i></div>' +
+      '<div class="spark-lbl">' + d.d.slice(1) + '</div></div>';
+  }).join('') : '<div class="muted">暂无数据</div>';
+  var wkMin = act.reduce(function (n, d) { return n + d.min; }, 0);
+  var wkDone = act.reduce(function (n, d) { return n + d.done; }, 0);
+  var wkTotal = act.reduce(function (n, d) { return n + d.total; }, 0);
+  document.getElementById('wk').innerHTML = [
+    ['本周总时长', wkMin + ' 分钟'],
+    ['任务完成率', wkTotal ? Math.round(wkDone / wkTotal * 100) + '%' : '—'],
+    ['最近正确率', s.rate7 ? s.rate7 + '%' : '—']
+  ].map(function (x) {
+    return '<div><div class="muted" style="font-size:12px">' + x[0] + '</div>' +
+      '<div style="font-size:19px;font-weight:600">' + x[1] + '</div></div>';
+  }).join('');
+
+  /* ---------- 掌握度 ---------- */
+  var ms = DB.get('mastery', {})[s.id] || [];
+  document.getElementById('mastery').innerHTML = ms.length ? ms.map(function (m) {
+    if (m.soon) {
+      return '<div class="subj-row"><span class="subj-name">' + E(m.subject) + '</span>' +
+        '<div class="subj-bar"><div class="bar"><i style="--w:0%"></i></div></div>' +
+        '<span class="subj-val"><span class="chip">P5 接入</span></span></div>';
+    }
+    return '<div class="subj-row"><span class="subj-name">' + E(m.subject) + '</span>' +
+      '<div class="subj-bar"><div class="bar"><i class="' + (m.v >= 85 ? 'ok' : (m.v < 70 ? 'warn' : '')) +
+        '" style="--w:' + m.v + '%"></i></div></div>' +
+      '<span class="subj-val">' + m.v + '%' + (m.trend ? ' · ' + (m.trend > 0 ? '+' : '') + m.trend + '%' : '') + '</span></div>';
+  }).join('') : '<div class="muted">还没有练习数据</div>';
+
+  /* ---------- 薄弱点 ---------- */
+  /* 薄弱知识点：优先用孩子真实作答派生；这个学生还没做过题才回退演示数据 */
+  var weakMine = DB.weakOf(s.id);
+  var weak = (weakMine.length ? weakMine : (DB.get('weak', {})[s.id] || [])).slice(0, 6);
+  document.getElementById('weak').innerHTML = weak.length ? weak.map(function (w) {
+    var cls = w.rate < 0.6 ? 'danger' : (w.rate < 0.75 ? 'warn' : 'ok');
+    return '<div class="row"><div class="row-main">' +
+      '<div class="row-title">' + E(w.kp) + ' <span class="chip">' + E(w.subject) + '</span></div>' +
+      '<div class="row-meta">做过 ' + w.n + ' 题</div></div>' +
+      '<div class="conf"><div class="bar"><i class="' + cls + '" style="--w:' + Math.round(w.rate * 100) + '%"></i></div>' +
+      '<span class="conf-val">' + Math.round(w.rate * 100) + '%</span></div>' +
+      '<div class="row-act"><a class="btn btn-xs" href="qbank.html?kp=' + encodeURIComponent(w.kp) + '">出这类题</a></div></div>';
+  }).join('') : '<div class="empty" style="padding:26px"><div class="empty-title">暂无数据</div></div>';
+
+  /* ---------- 最近作答（真实流水） ---------- */
+  function fmtMs(ms) {
+    if (!ms) return '—';
+    var sec = Math.round(ms / 1000);
+    return sec < 60 ? sec + ' 秒' : Math.floor(sec / 60) + ' 分 ' + (sec % 60) + ' 秒';
+  }
+  var recent = DB.subsOf(s.id).slice(0, 6);
+  document.getElementById('subs').innerHTML = recent.length ? recent.map(function (x) {
+    return '<tr><td style="font-size:12.5px">' + ADMIN.ago(x.at) + '</td>' +
+      '<td><span class="chip brand">' + E(x.subject) + '</span></td>' +
+      '<td><div style="font-size:12.5px">' + E(x.kp) + '</div>' +
+        '<div class="t-sub">' + E(String(x.ans == null ? '未作答' : x.ans)).slice(0, 40) + '</div></td>' +
+      '<td><span class="chip ' + (x.ok ? 'ok' : 'danger') + '">' + (x.ok ? '对' : '错') + '</span></td>' +
+      '<td class="t-act">' + fmtMs(x.ms) + '</td></tr>';
+  }).join('') : '<tr><td colspan="5"><div class="empty" style="padding:26px">' +
+    '<div class="empty-title">还没有作答记录</div>' +
+    '<div class="empty-sub">孩子在用户端做题后，这里会实时出现</div></div></td></tr>';
+
+  /* ---------- 任务历史 ---------- */
+  var hist = (DB.get('tasks', {})._history || {})[s.id] || [];
+  document.getElementById('hist').innerHTML = hist.length ? hist.map(function (h) {
+    var rate = h.total ? Math.round(h.done / h.total * 100) : 0;
+    return '<tr><td>' + E(h.date) + '</td>' +
+      '<td>' + h.done + ' / ' + h.total + '</td>' +
+      '<td>' + h.minutes + ' 分钟</td>' +
+      '<td>' + h.rate + '%</td>' +
+      '<td class="t-act">' + (rate === 100 ? '<span class="chip ok">全勤</span>'
+        : (rate >= 66 ? '<span class="chip">完成' + rate + '%</span>' : '<span class="chip warn">未完成</span>')) + '</td></tr>';
+  }).join('') : '<tr><td colspan="5"><div class="empty" style="padding:26px"><div class="empty-title">暂无记录</div></div></td></tr>';
+
+  /* ---------- 档案 ---------- */
+  function kv(rows) {
+    return rows.map(function (r) {
+      return '<div class="kv-row"><div class="kv-k">' + r[0] + '</div><div class="kv-v">' + r[1] + '</div></div>';
+    }).join('');
+  }
+  document.getElementById('profile').innerHTML = kv(ADMIN.stuRows(s));
+
+  /* ---------- 用户端账号（2026-10-16 起没有绑定码） ---------- */
+  document.getElementById('bind').innerHTML = kv([
+    ['登录账号', '<code style="font-size:14px;font-weight:600">' + E(s.account) + '</code>' +
+      ' <span class="muted">（账号即学生，1 账号 = 1 学生）</span>'],
+    ['初始密码', s.pwdChanged
+      ? '<span class="chip ok">孩子已自行修改</span> <span class="muted">· 重置后会生成新的</span>'
+      : '<span class="mono" style="font-size:15px;font-weight:600;letter-spacing:1.5px">' + E(s.pwdInit || '—') + '</span>' +
+        ' <span class="muted">· 6 位数字</span>'],
+    ['激活状态', s.activated
+      ? '<span class="chip ok">已激活</span> <span class="muted">· ' + ADMIN.ago(s.activatedAt) + '首次登录</span>'
+      : '<span class="chip warn">待激活</span> <span class="muted">· 把账号密码给孩子即可</span>'],
+    ['最近登录设备', s.lastDevice ? E(s.lastDevice) : '<span class="muted">—</span>'],
+    ['账号状态', isOff
+      ? '<span class="chip danger">已停用</span> <span class="muted">· ' + ADMIN.ago(s.disabledAt || Date.now()) + '停用，数据保留</span>'
+      : '<span class="chip ok">在用</span>'],
+    ['可见范围', '<span class="chip ' + (s.vis === '家人可见' ? 'ok' : '') + '">' + E(s.vis) + '</span>'],
+    ['功能权限', (function () {
+      var pp = DB.permOf(s).preset;
+      return '<span class="chip ' + (pp === 'full' ? 'ok' : (pp === 'readonly' ? 'warn' : 'brand')) + '">' +
+        DB.permLabelOf(s) + '</span>';
+    })()],
+    ['最近活跃', s.lastActive ? ADMIN.ago(s.lastActive) : '从未登录']
+  ]);
+  document.getElementById('bind-act').innerHTML =
+    '<div class="btn-row">' +
+      '<button class="btn btn-sm" id="b-copy">' + I('copy') + '复制账号</button>' +
+      '<button class="btn btn-sm" id="b-pwd">' + I('refresh') + '重置密码</button>' +
+      '<button class="btn btn-sm" id="b-kick">' + I('logout') + '强制下线</button>' +
+      '<button class="btn btn-sm" id="b-vis">改可见范围</button>' +
+      '<button class="btn btn-sm" id="b-off">' + (isOff ? '恢复使用' : '停用账号') + '</button>' +
+      '<button class="btn btn-sm btn-danger" id="b-del">' + I('trash') + '删除学生</button>' +
+    '</div>' +
+    '<p class="hint">「重置密码」会生成一份新的 6 位初始密码，孩子下次要用新的登录；' +
+    '「强制下线」只是登出记录（正式版由后端吊销登录状态），数据不动。' +
+    '「停用」是让孩子用不了（每页一把锁）但数据全留；「删除」会连同他的任务、记录、错题、作文提交一起清掉，不可恢复。</p>';
+
+  document.getElementById('b-copy').addEventListener('click', function () {
+    ADMIN.copy('账号 ' + s.account + '　密码 ' + (s.pwdChanged ? '（孩子已自行修改）' : s.pwdInit),
+               '账号已复制');
+  });
+  document.getElementById('b-pwd').addEventListener('click', function () {
+    ADMIN.confirm({
+      title: '重置「' + s.name + '」的密码？', ok: '重置',
+      text: '会给这个账号生成一份新的 6 位初始密码，孩子下次登录要用新的。' +
+            '旧密码立即失效，学习数据不受影响。',
+      onOk: function () {
+        var rec = DB.stuResetPwd(s.id);
+        ADMIN.modal({
+          title: '新的初始密码',
+          body: '<div class="pw-line"><code class="mono">' + E(rec.pwdInit) + '</code>' +
+            '<button class="btn btn-xs btn-ghost" id="cp2">' + I('copy') + '复制</button></div>' +
+            '<p class="hint" style="margin-top:12px">把这 6 位数字给孩子，登录后建议让 TA 改成自己记得住的。' +
+            '这串密码只在这里显示一次，关掉后可以再点「重置密码」重新生成。</p>',
+          foot: '<button class="btn btn-primary" data-x="ok2">知道了</button>',
+          onMount: function (m2) {
+            m2.querySelector('#cp2').addEventListener('click', function () {
+              ADMIN.copy(rec.pwdInit, '密码已复制');
+            });
+            m2.querySelector('[data-x="ok2"]').addEventListener('click', function () {
+              ADMIN.closeModal();
+              setTimeout(function () { location.reload(); }, 200);
+            });
+          }
+        });
+      }
+    });
+  });
+  document.getElementById('b-kick').addEventListener('click', function () {
+    if (!s.activated) { ADMIN.toast('这个账号还没登录过，不用下线', 'warn'); return; }
+    DB.stuKick(s.id);
+    ADMIN.toast('已强制下线，孩子需要重新登录');
+    setTimeout(function () { location.reload(); }, 400);
+  });
+  document.getElementById('b-vis').addEventListener('click', function () {
+    ADMIN.modal({
+      title: '可见范围 · ' + s.name,
+      body: '<div class="seg" id="m-vis">' + ['仅自己', '家人可见'].map(function (v) {
+          return '<button type="button" data-val="' + v + '" class="' + (s.vis === v ? 'on' : '') + '">' + v + '</button>';
+        }).join('') + '</div>' +
+        '<p class="hint" style="margin-top:12px">' +
+        '「家人可见」：你能在管理端看到这位学生的全部资料与记录（含发帖内容）。' +
+        '用户端不会提示「谁在看」，避免被监视感。</p>',
+      foot: '<button class="btn" data-x="no">取消</button><button class="btn btn-primary" data-x="ok">保存</button>',
+      onMount: function (m) {
+        ADMIN.seg('#m-vis');
+        m.querySelector('[data-x="no"]').addEventListener('click', ADMIN.closeModal);
+        m.querySelector('[data-x="ok"]').addEventListener('click', function () {
+          s.vis = ADMIN.segVal(m.querySelector('#m-vis'));
+          DB.set('students', students);
+          ADMIN.closeModal(); ADMIN.toast('已更新可见范围');
+          setTimeout(function () { location.reload(); }, 300);
+        });
+      }
+    });
+  });
+  /* 「解除绑定」已随绑定码一起退役：账号即学生，不需要解绑；
+     要断设备用「强制下线」，要换密码用「重置密码」。 */
+
+  /* ---------- 功能权限（8 个开关 + 四档预设） ----------
+     改一下就落库，不放「保存」按钮：权限是常调的项，多一步就多一次忘点。
+     与上面的「可见范围」无关 —— 那是「家长能否看到」，这是「孩子能用什么」。 */
+  function renderPerm() {
+    var p = DB.permOf(s);
+    var tiers = ['full', 'learn', 'task', 'readonly'];
+    var onN = DB.PERM_KEYS.filter(function (k) { return p.mods[k]; }).length;
+
+    var html = '<div class="perm-tier">' +
+      tiers.map(function (k) {
+        return '<button type="button" class="perm-t' + (p.preset === k ? ' on' : '') +
+          '" data-tier="' + k + '">' + DB.PERM_PRESETS[k].label + '</button>';
+      }).join('') +
+      (p.preset === 'custom' ? '<span class="perm-t on">自定义</span>' : '') +
+      '</div>';
+
+    html += '<div class="perm-list">' +
+      DB.PERM_KEYS.map(function (k) {
+        var on   = !!p.mods[k];
+        var tied = (k === 'post' && !p.mods.posts);   /* 看不了记录就发不了 */
+        var last = on && onN === 1;                   /* 最后一项不许再关 */
+        return '<div class="perm-row' + (tied ? ' tied' : '') + '">' +
+          '<button type="button" class="perm-sw' + (on ? ' on' : '') + '" data-sw="' + k + '"' +
+            ' role="switch" aria-checked="' + on + '"' +
+            (tied || last ? ' disabled' : '') + '><i></i></button>' +
+          '<div class="perm-main"><b>' + DB.PERM_LABELS[k] + '</b>' +
+            '<span>' + (tied ? '需先打开「看记录」' : DB.PERM_DESC[k]) + '</span></div>' +
+          '<span class="perm-tag">' + (on ? '已开放' : '已锁') + '</span>' +
+        '</div>';
+      }).join('') +
+      '</div>';
+
+    html += '<p class="hint" style="margin-top:12px">' +
+      '锁住的模块，学生端<b>导航照常显示</b>，点进去看到一把锁 —— 不是藏起来，是进不去。' +
+      '改动立即生效，学生端下次进入页面时按新权限渲染。</p>';
+
+    document.getElementById('perm-card').innerHTML = html;
+  }
+
+  document.getElementById('perm-card').addEventListener('click', function (e) {
+    var tier = e.target.closest('[data-tier]');
+    if (tier) {
+      var tk = tier.getAttribute('data-tier');
+      s.perm = DB.permNew(tk, Date.now());
+      DB.set('students', students);
+      renderPerm();
+      ADMIN.toast('已切到「' + DB.PERM_PRESETS[tk].label + '」');
+      return;
+    }
+
+    var sw = e.target.closest('[data-sw]');
+    if (!sw || sw.disabled) return;
+
+    var key = sw.getAttribute('data-sw');
+    var p = DB.permOf(s);
+    var mods = p.mods;
+    var open = !mods[key];
+
+    if (!open) {
+      var onN = DB.PERM_KEYS.filter(function (x) { return mods[x]; }).length;
+      if (onN <= 1) { ADMIN.toast('至少保留一项，否则学生登录后处处是锁', 'warn'); return; }
+      if (key === 'posts' && mods.post) ADMIN.toast('「看记录」关掉后，「发记录」也一并关闭', 'warn');
+    }
+    mods[key] = open ? 1 : 0;
+    if (key === 'posts' && !open) mods.post = 0;
+
+    s.perm = { preset: DB.permMatch(mods), mods: mods, updatedAt: Date.now() };
+    DB.set('students', students);
+    renderPerm();
+    if (open) ADMIN.toast('「' + DB.PERM_LABELS[key] + '」已开放');
+    else      ADMIN.toast('「' + DB.PERM_LABELS[key] + '」已锁', 'warn');
+  });
+
+  renderPerm();
+
+  /* ---------- 编辑档案：与「新建学生」共用同一套表单 ----------
+     改完立即同步派生值（主攻科目 / 目标分），出题依据跟着变 */
+  function editProfile() {
+    ADMIN.drawer({
+      title: '编辑档案 · ' + s.name,
+      wide: true,
+      body: ADMIN.stuForm(s),
+      foot: '<button class="btn" data-x="no">取消</button><button class="btn btn-primary" data-x="ok">保存</button>',
+      onMount: function (d) {
+        var f = ADMIN.stuFormBind(d, s.id);
+        d.querySelector('[data-x="no"]').addEventListener('click', ADMIN.closeDrawer);
+        d.querySelector('[data-x="ok"]').addEventListener('click', function () {
+          var err = f.validate();
+          if (err) { ADMIN.toast(err, 'warn'); return; }
+          var p = f.read();
+          var all = DB.get('students', []);
+          var t = all.filter(function (x) { return x.id === s.id; })[0] || s;
+          Object.keys(p).forEach(function (k) { if (k !== 'permPreset') t[k] = p[k]; });
+          if (p.permPreset) t.perm = DB.permNew(p.permPreset, Date.now());   /* 自定义档位不覆盖 */
+          if (t.name !== s.name) t.initial = t.name.charAt(0);               /* 改名后头像块跟着换字 */
+          DB.stuSync(t);
+          DB.set('students', all);
+          ADMIN.closeDrawer();
+          ADMIN.toast('已保存，出题依据已更新');
+          setTimeout(function () { location.reload(); }, 400);
+        });
+      }
+    });
+  }
+  document.getElementById('edit').addEventListener('click', editProfile);
+
+  /* ---------- 停用 / 恢复：不动数据，只让孩子端每页上锁 ---------- */
+  function toggleOff() {
+    if (isOff) {
+      DB.stuDisable(s.id, false);
+      ADMIN.toast('已恢复「' + s.name + '」');
+      setTimeout(function () { location.reload(); }, 350);
+      return;
+    }
+    ADMIN.confirm({
+      title: '停用「' + s.name + '」？', ok: '停用',
+      text: '停用后孩子端每个模块都会上一把锁（导航还在，点进去是锁），等于用不了；' +
+            '学习数据全部保留，随时点「恢复使用」就能继续。',
+      onOk: function () {
+        DB.stuDisable(s.id, true);
+        ADMIN.toast('已停用「' + s.name + '」');
+        setTimeout(function () { location.reload(); }, 350);
+      }
+    });
+  }
+
+  /* ---------- 删除学生：二次确认 + 输入昵称核对（连数据一起清） ---------- */
+  function delStudent() {
+    var postN = DB.get('posts', []).filter(function (p) { return p.sid === s.id; }).length;
+    var subN = 0;
+    DB.get('essays', []).forEach(function (t) {
+      (t.subs || []).forEach(function (x) { if (x.sid === s.id) subN++; });
+    });
+
+    ADMIN.modal({
+      title: '删除「' + s.name + '」',
+      body: '<p class="hint" style="margin:0 0 12px">会一起删掉：这个学生的每日任务、学习记录（' + postN +
+        ' 条）、错题与掌握度数据、作文提交（' + subN + ' 份）。<b>删掉不可恢复。</b>' +
+        '如果只是想让孩子暂时别用，请改用「停用账号」。</p>' +
+        '<div class="field"><label>输入昵称「' + E(s.name) + '」以确认</label>' +
+        '<input class="inp" id="del-ck" autocomplete="off" placeholder="' + E(s.name) + '"></div>',
+      foot: '<button class="btn" data-x="no">取消</button>' +
+            '<button class="btn btn-danger" data-x="ok">' + I('trash') + '确认删除</button>',
+      onMount: function (m) {
+        m.querySelector('[data-x="no"]').addEventListener('click', ADMIN.closeModal);
+        m.querySelector('[data-x="ok"]').addEventListener('click', function () {
+          if (m.querySelector('#del-ck').value.trim() !== s.name) {
+            ADMIN.toast('昵称不一致，没有删除', 'warn');
+            return;
+          }
+          var stat = DB.stuPurge(s.id);
+          ADMIN.closeModal();
+          ADMIN.toast('已删除「' + s.name + '」：任务 ' + stat.tasks + ' · 记录 ' + stat.posts +
+            ' · 作文提交 ' + stat.essaySubs + ' 份');
+          if (ADMIN.currentId() === s.id) {
+            var rest = DB.get('students', []);
+            if (rest.length) ADMIN.setCurrent(rest[0].id);
+          }
+          setTimeout(function () { location.href = 'students.html'; }, 800);
+        });
+      }
+    });
+  }
+  document.getElementById('b-off').addEventListener('click', toggleOff);
+  document.getElementById('b-del').addEventListener('click', delStudent);
+
+  /* ---------- 最近记录 ---------- */
+  var ps = DB.get('posts', []).filter(function (p) { return p.sid === s.id; }).slice(0, 5);
+  document.getElementById('posts').innerHTML = ps.length ? ps.map(function (p) {
+    return '<div class="row"><div class="row-main">' +
+      '<div class="row-title">' + E(p.title) +
+        '<span class="chip ' + (p.status === '被举报' ? 'danger' : '') + '">' + E(p.status) + '</span>' +
+        '<span class="chip">' + E(p.vis) + '</span></div>' +
+      '<div class="row-meta">' + E(p.tag) + ' · ' + ADMIN.ago(p.at) + ' · ♥ ' + p.likes + ' · 💬 ' + p.cmts +
+      (p.imgs ? ' · 📷 ' + p.imgs : '') + '</div></div></div>';
+  }).join('') : '<div class="empty" style="padding:26px"><div class="empty-title">还没有记录</div></div>';
+})();
+</script>
+</body>
+</html>

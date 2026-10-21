@@ -1,0 +1,572 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="light">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#F5F6F8">
+<title>单词表 · 学迹管理端</title>
+<link rel="stylesheet" href="style.css?v=20261021c">
+</head>
+<body data-page="wordsl" data-title="单词表" data-sub="词书 → 单元 两级维护 · 只管录入与管理，学习模式在「发布每日任务」里配">
+
+<div class="app">
+  <aside class="sb" id="sb"></aside>
+  <div class="main">
+    <header class="tb" id="tb"></header>
+    <div class="content">
+
+      <section class="sec">
+        <div class="grid g-4" id="stats"></div>
+      </section>
+
+      <section class="sec">
+        <div class="sec-title">
+          <span>词书</span><span class="count" id="wbcnt"></span>
+          <span class="right">
+            <button class="btn btn-primary btn-sm" id="wb-add">新增词书</button>
+          </span>
+        </div>
+        <div class="grid g-3" id="wbcards"></div>
+        <p class="hint">
+          一本词书 = 一册或一类词汇（七年级上册 / 中考词书…），词书里再按单元分组。词条必须挂在一本词书的某个单元下。
+          <b>发布</b> = 学生端可以把它选为背词目标；<b>单元</b>可先在词书里列好，也可以录词时新填（会自动补进清单）。
+        </p>
+      </section>
+
+      <section class="sec">
+        <div class="sec-title">
+          <span>词条</span><span class="count" id="cnt"></span>
+          <span class="right">
+            <select class="sel inp-sm" id="f-book" style="width:190px"></select>
+            <input class="inp inp-sm" id="kw" placeholder="搜单词 / 释义" style="width:150px">
+            <button class="btn btn-primary btn-sm" id="ai-gen">AI 生成一批</button>
+            <button class="btn btn-sm" id="import">批量导入</button>
+          </span>
+        </div>
+
+        <div class="wtools">
+          <div class="seg wrap" id="f-unit"></div>
+        </div>
+
+        <div class="tbl-wrap">
+          <table class="tbl">
+            <thead>
+              <tr>
+                <th>单词</th><th>释义</th><th>例句</th><th>词书 · 单元</th>
+                <th style="text-align:right">操作</th>
+              </tr>
+            </thead>
+            <tbody id="rows"></tbody>
+          </table>
+        </div>
+
+        <p class="hint">
+          这一页只管录词：单词 / 音标 / 释义 / 例句 + 挂到哪本词书的哪个单元。
+          学生端什么时候背、背新词还是复习旧词，在「发布每日任务」里配，不在这里管。
+        </p>
+      </section>
+
+    </div>
+  </div>
+</div>
+
+<script src="demo.js?v=20261021c"></script>
+<script src="admin.js?v=20261021c"></script>
+<script>
+(function () {
+  var E = ADMIN.esc, I = ADMIN.icon;
+  var GRADES = ['七年级上', '七年级下', '八年级上', '八年级下', '九年级上', '九年级下', '不限'];
+  var fBook = '', fUnit = '', kw = '';
+
+  /* 词条稳定 id：新增时分配 w-001 起；排程结果、词单快照都按 id 定位词条 */
+  function wid(n) { return 'w-' + ('000' + n).slice(-3); }
+  function nextWid(extra) {
+    var max = 0;
+    DB.get('words', []).forEach(function (x) {
+      var m = /^w-(\d+)$/.exec(x.id || '');
+      if (m && +m[1] > max) max = +m[1];
+    });
+    return wid(max + (extra || 1));
+  }
+
+  /* ---------- 取数 ---------- */
+  function books() { return DB.get('wordbooks', []); }
+  function all() { return DB.get('words', []); }
+  function bookOf(id) { return books().filter(function (b) { return b.id === id; })[0] || null; }
+  function wordsOf(id) { return all().filter(function (w) { return w.book === id; }); }
+  function bookName(id) { var b = bookOf(id); return b ? b.name : '未归类'; }
+  /* 词书的单元清单 = 自己列的 + 词条里实际出现过的（防漏） */
+  function unitsOf(b) {
+    var ws = wordsOf(b.id), out = (b.units || []).slice();
+    ws.forEach(function (w) { if (w.unit && out.indexOf(w.unit) < 0) out.push(w.unit); });
+    return out;
+  }
+
+  function list() {
+    var k = kw.toLowerCase();
+    return all().filter(function (w) {
+      if (fBook && w.book !== fBook) return false;
+      if (fUnit === '__none__') { if (w.unit) return false; }
+      else if (fUnit && w.unit !== fUnit) return false;
+      if (k && (w.w + ' ' + w.mean).toLowerCase().indexOf(k) < 0) return false;
+      return true;
+    });
+  }
+
+  /* ---------- 词书卡片 ---------- */
+  function unitChips(b, ws) {
+    var units = unitsOf(b);
+    if (!units.length) return '<span class="chip line">还没分单元</span>';
+    var show = units.slice(0, 6), out = '';
+    show.forEach(function (u) {
+      var n = ws.filter(function (w) { return w.unit === u; }).length;
+      out += '<span class="chip ' + (n ? 'brand' : 'line') + '">' + E(u) + ' <b style="font-weight:600">' + n + '</b></span>';
+    });
+    if (units.length > show.length) out += '<span class="chip line">+' + (units.length - show.length) + '</span>';
+    return out;
+  }
+
+  function wbCards() {
+    var bs = books();
+    document.getElementById('wbcnt').textContent = '· ' + bs.length + ' 本 · 共 ' + all().length + ' 词';
+    var html = bs.map(function (b) {
+      var ws = wordsOf(b.id);
+      var units = unitsOf(b);
+      var got = units.filter(function (u) { return ws.some(function (w) { return w.unit === u; }); }).length;
+      var target = +b.target || 0;
+      var pct = target ? Math.min(100, Math.round(ws.length / target * 100))
+                       : (units.length ? Math.round(got / units.length * 100) : 0);
+      return '<div class="card" data-id="' + b.id + '">' +
+        '<div class="card-head"><h3>' + E(b.name) + '</h3>' +
+          '<span class="chip ' + (b.published ? 'ok' : 'line') + '">' + (b.published ? '已发布' : '未发布') + '</span></div>' +
+        '<div class="hint" style="margin:0 0 10px">' + E(b.grade || '未填年级') + ' · ' + units.length + ' 个' +
+          E(b.unitName || '单元') + ' · 已录 ' + ws.length + ' 词' + (target ? ' / 目标 ' + target : '') + '</div>' +
+        '<div class="bar-row"><div class="bar"><i style="--w:' + pct + '%"></i></div>' +
+          '<span class="bar-val" style="width:auto">' + (target ? pct + '%' : got + '/' + units.length + ' ' + E(b.unitName || '单元')) + '</span></div>' +
+        '<div class="chipline" style="margin-top:10px">' + unitChips(b, ws) + '</div>' +
+        '<div class="btn-row" style="margin-top:11px">' +
+          '<button class="btn btn-xs btn-primary" data-wb="filter">看词条</button>' +
+          '<button class="btn btn-xs" data-wb="edit">' + I('pen') + '编辑</button>' +
+          '<button class="btn btn-xs btn-ghost" data-wb="pub">' + (b.published ? '下架' : '发布') + '</button>' +
+          '<button class="btn btn-xs btn-ghost" data-wb="del" title="删除词书">' + I('trash') + '</button>' +
+        '</div>' +
+      '</div>';
+    }).join('');
+    if (!bs.length) {
+      html = '<div class="card"><div class="empty"><div class="ico">' + I('abc') + '</div>' +
+        '<div class="empty-title">还没有词书</div><div class="empty-sub">点右上「新增词书」建一本（如：七年级上册单词）</div></div></div>';
+    }
+    document.getElementById('wbcards').innerHTML = html;
+  }
+
+  /* ---------- 词条统计 + 表格 ---------- */
+  function render() {
+    var words = all(), bs = books();
+    var unitTotal = bs.reduce(function (n, b) { return n + (b.units || []).length; }, 0);
+    var noPhon = words.filter(function (w) { return !w.phon; }).length;
+    var noEg = words.filter(function (w) { return !w.eg; }).length;
+
+    document.getElementById('stats').innerHTML = [
+      ['abc', '', '词条总数', words.length + '<small>个</small>',
+        bs.length + ' 本词书 · ' + unitTotal + ' 个单元'],
+      ['book', '', '词书', bs.length + '<small>本</small>',
+        bs.filter(function (b) { return b.published; }).length + ' 本已发布'],
+      ['layers', 'ok', '单元', unitTotal + '<small>个</small>',
+        '平均每本 ' + (bs.length ? Math.round(unitTotal / bs.length) : 0) + ' 个'],
+      ['file', 'warn', '资料待补', (noPhon + noEg) + '<small>项</small>',
+        '缺音标 ' + noPhon + ' · 缺例句 ' + noEg]
+    ].map(function (x) {
+      return '<div class="stat"><div class="stat-top"><span class="ico ' + x[1] + '">' + I(x[0]) + '</span>' + x[2] + '</div>' +
+        '<div class="stat-num">' + x[3] + '</div><div class="stat-sub">' + E(x[4]) + '</div></div>';
+    }).join('');
+
+    renderFilters();
+    wbCards();
+
+    var rows = list();
+    document.getElementById('cnt').textContent = '· ' + rows.length + ' 个' +
+      (rows.length === words.length ? '' : '（共 ' + words.length + '）') +
+      (fBook ? ' · ' + bookName(fBook) : '');
+
+    document.getElementById('rows').innerHTML = rows.length ? rows.map(function (w) {
+      var b = bookOf(w.book);
+      return '<tr data-i="' + words.indexOf(w) + '">' +
+        '<td><div class="t-main">' + E(w.w) + '</div>' +
+          '<div class="t-sub mono">' + (w.phon ? E(w.phon) : '<span class="muted">未填音标</span>') + '</div></td>' +
+        '<td>' + E(w.mean) + '</td>' +
+        '<td style="max-width:220px"><span class="muted" style="font-size:12px">' + (w.eg ? E(w.eg) : '—') + '</span></td>' +
+        '<td><span class="chip ' + (b ? 'line' : 'warn') + '">' + E(b ? b.name : '未归类') + '</span>' +
+          (w.unit ? '<div class="t-sub" style="margin-top:4px">' + E(w.unit) + '</div>' : '') + '</td>' +
+        '<td class="t-act">' +
+          '<button class="btn btn-xs btn-ghost" data-act="edit">编辑</button> ' +
+          '<button class="btn btn-xs btn-ghost" data-act="del">' + I('trash') + '</button>' +
+        '</td></tr>';
+    }).join('') : '<tr><td colspan="5"><div class="empty"><div class="ico">' + I('abc') + '</div>' +
+      '<div class="empty-title">没有匹配的词条</div><div class="empty-sub">换个词书 / 单元，或 AI 生成一批、批量导入</div></div></td></tr>';
+  }
+
+  /* ---------- 筛选控件 ---------- */
+  function renderFilters() {
+    var bs = books();
+    document.getElementById('f-book').innerHTML = '<option value="">全部词书（' + all().length + ' 词）</option>' +
+      bs.map(function (b) {
+        return '<option value="' + b.id + '"' + (b.id === fBook ? ' selected' : '') + '>' +
+          E(b.name) + '（' + wordsOf(b.id).length + ' 词）</option>';
+      }).join('');
+
+    var seg = document.getElementById('f-unit');
+    if (!fBook) {
+      seg.innerHTML = '<button class="on" data-val="">全部单元</button>';
+      return;
+    }
+    var b = bookOf(fBook), ws = wordsOf(fBook), units = unitsOf(b);
+    var blank = ws.filter(function (w) { return !w.unit; }).length;
+    seg.innerHTML = '<button class="' + (fUnit === '' ? 'on' : '') + '" data-val="">全部单元<i>' + ws.length + '</i></button>' +
+      units.map(function (u) {
+        var n = ws.filter(function (w) { return w.unit === u; }).length;
+        return '<button class="' + (fUnit === u ? 'on' : '') + '" data-val="' + E(u) + '">' + E(u) + '<i>' + n + '</i></button>';
+      }).join('') +
+      (blank ? '<button class="' + (fUnit === '__none__' ? 'on' : '') + '" data-val="__none__">未分单元<i>' + blank + '</i></button>' : '');
+  }
+
+  document.getElementById('f-book').addEventListener('change', function () {
+    fBook = this.value; fUnit = ''; render();
+  });
+  document.getElementById('f-unit').addEventListener('click', function (e) {
+    var b = e.target.closest('button[data-val]');
+    if (!b) return;
+    fUnit = b.getAttribute('data-val');
+    render();
+  });
+
+  /* ---------- 词书编辑抽屉 ---------- */
+  function openWb(b) {
+    var isNew = !b;
+    var x = b || { name: '', grade: '七年级上', unitName: 'Unit', units: [], target: 0, note: '', published: false };
+    var body = '<div class="form-grid">' +
+      '<div class="field"><label>词书名<span class="req">*</span></label>' +
+        '<input class="inp" id="b-name" value="' + E(x.name) + '" placeholder="如：七年级上册单词 / 中考词书"></div>' +
+      '<div class="form-grid two">' +
+        '<div class="field"><label>适用年级</label><select class="sel" id="b-grade">' +
+          GRADES.map(function (g) { return '<option' + (g === x.grade ? ' selected' : '') + '>' + g + '</option>'; }).join('') +
+        '</select></div>' +
+        '<div class="field"><label>目标词数 <span class="muted">（可留 0）</span></label>' +
+          '<input class="inp" id="b-target" type="number" value="' + (+x.target || 0) + '"></div>' +
+      '</div>' +
+      '<div class="field"><label>单元叫法</label>' +
+        '<input class="inp" id="b-unitname" value="' + E(x.unitName || 'Unit') + '" placeholder="Unit / 分组 / 篇"></div>' +
+      '<div class="field"><label>单元清单 <span class="muted">（每行一个；也可以先留空，录词时新填会自动补进来）</span></label>' +
+        '<textarea class="ta" id="b-units" placeholder="Unit 1&#10;Unit 2&#10;Unit 3">' + E((x.units || []).join('\n')) + '</textarea></div>' +
+      '<div class="field"><label>备注</label><input class="inp" id="b-note" value="' + E(x.note || '') + '" placeholder="如：人教版七上全册词汇"></div>' +
+      '<label class="switch"><input type="checkbox" id="b-pub" ' + (x.published ? 'checked' : '') + '>' +
+        '<span class="track"></span><span class="sw-txt">发布（学生端可以把它选为背词目标）</span></label>' +
+      '</div>';
+
+    ADMIN.drawer({
+      title: isNew ? '新增词书' : '编辑 · ' + x.name,
+      body: body,
+      foot: '<button class="btn" data-x="no">取消</button>' +
+            '<button class="btn btn-primary" data-x="ok">' + (isNew ? '创建并去录词' : '保存') + '</button>',
+      onMount: function (d) {
+        d.querySelector('[data-x="no"]').addEventListener('click', ADMIN.closeDrawer);
+        d.querySelector('[data-x="ok"]').addEventListener('click', function () {
+          var name = d.querySelector('#b-name').value.trim();
+          if (!name) { ADMIN.toast('请填词书名', 'warn'); return; }
+          var bs = DB.get('wordbooks', []);
+          var units = d.querySelector('#b-units').value.split('\n')
+            .map(function (s) { return s.trim(); })
+            .filter(function (s, i, arr) { return s && arr.indexOf(s) === i; });
+          var rec = {
+            name: name,
+            grade: d.querySelector('#b-grade').value,
+            unitName: d.querySelector('#b-unitname').value.trim() || 'Unit',
+            target: +d.querySelector('#b-target').value || 0,
+            units: units,
+            note: d.querySelector('#b-note').value.trim(),
+            published: d.querySelector('#b-pub').checked
+          };
+          var target;
+          if (isNew) {
+            rec.id = DB.uid().replace(/^u/, 'wb-');
+            rec.createdAt = Date.now();
+            bs.push(rec); target = rec;
+            ADMIN.toast('词书已建：' + name);
+          } else {
+            target = bs.filter(function (y) { return y.id === x.id; })[0] || x;
+            Object.keys(rec).forEach(function (k) { target[k] = rec[k]; });
+            ADMIN.toast('已保存词书');
+          }
+          DB.set('wordbooks', bs);
+          ADMIN.closeDrawer();
+          if (isNew) fBook = target.id;
+          fUnit = '';
+          render();
+        });
+      }
+    });
+  }
+
+  document.getElementById('wb-add').addEventListener('click', function () { openWb(null); });
+
+  document.getElementById('wbcards').addEventListener('click', function (e) {
+    var btn = e.target.closest('button[data-wb]');
+    if (!btn) return;
+    var card = e.target.closest('.card');
+    var bs = DB.get('wordbooks', []);
+    var b = bs.filter(function (y) { return y.id === card.getAttribute('data-id'); })[0];
+    if (!b) return;
+    var act = btn.getAttribute('data-wb');
+    if (act === 'filter') {
+      fBook = b.id; fUnit = '';
+      render();
+      document.getElementById('rows').scrollIntoView({ block: 'center' });
+      return;
+    }
+    if (act === 'edit') { openWb(b); return; }
+    if (act === 'pub') {
+      b.published = !b.published;
+      DB.set('wordbooks', bs);
+      ADMIN.toast(b.published ? '已发布：学生端可选《' + b.name + '》' : '已下架');
+      render();
+      return;
+    }
+    if (act === 'del') {
+      var n = wordsOf(b.id).length;
+      ADMIN.confirm({
+        title: '删除《' + b.name + '》？', danger: true, ok: '删除',
+        text: n ? '这本词书下的 ' + n + ' 个词条会一起删掉（学生端已背记录保留）。' : '这本词书下还没有词条。',
+        onOk: function () {
+          DB.set('wordbooks', bs.filter(function (y) { return y.id !== b.id; }));
+          DB.set('words', DB.get('words', []).filter(function (w) { return w.book !== b.id; }));
+          if (fBook === b.id) { fBook = ''; fUnit = ''; }
+          ADMIN.toast('已删除词书' + (n ? '及 ' + n + ' 个词条' : ''));
+          render();
+        }
+      });
+    }
+  });
+
+  /* ---------- 编辑词条 ---------- */
+  function unitsOptions(bookId, cur) {
+    var b = bookOf(bookId);
+    var list = b ? unitsOf(b) : [];
+    return list.map(function (u) { return '<option value="' + E(u) + '"' + (u === cur ? ' selected' : '') + '>'; }).join('');
+  }
+  function form(w) {
+    w = w || {};
+    var bs = books();
+    var curBook = w.book || fBook || (bs[0] && bs[0].id) || '';
+    return '<div class="form-grid">' +
+      '<div class="form-grid two">' +
+        '<div class="field"><label>单词<span class="req">*</span></label><input class="inp" id="w-w" value="' + E(w.w || '') + '"></div>' +
+        '<div class="field"><label>音标</label><input class="inp mono" id="w-phon" value="' + E(w.phon || '') + '"></div>' +
+      '</div>' +
+      '<div class="field"><label>释义<span class="req">*</span></label><input class="inp" id="w-mean" value="' + E(w.mean || '') + '"></div>' +
+      '<div class="field"><label>例句（英文）</label><input class="inp" id="w-eg" value="' + E(w.eg || '') + '"></div>' +
+      '<div class="form-grid two">' +
+        '<div class="field"><label>所属词书<span class="req">*</span></label><select class="sel" id="w-book">' +
+          bs.map(function (x) { return '<option value="' + x.id + '"' + (x.id === curBook ? ' selected' : '') + '>' + E(x.name) + '</option>'; }).join('') +
+          (bs.length ? '' : '<option value="">（请先建词书）</option>') +
+        '</select></div>' +
+        '<div class="field"><label>单元</label>' +
+          '<input class="inp" id="w-unit" list="w-units" value="' + E(w.unit || '') + '" placeholder="可留空，或填新单元名">' +
+          '<datalist id="w-units">' + unitsOptions(curBook, w.unit) + '</datalist></div>' +
+      '</div>' +
+      '</div>';
+  }
+  function openForm(w) {
+    var idx = all().indexOf(w);
+    ADMIN.drawer({
+      title: w ? '编辑 · ' + w.w : '新增单词',
+      body: form(w),
+      foot: '<button class="btn" data-x="no">取消</button><button class="btn btn-primary" data-x="ok">保存</button>',
+      onMount: function (d) {
+        /* 换词书 → 单元候选跟着换 */
+        d.querySelector('#w-book').addEventListener('change', function () {
+          var uEl = d.querySelector('#w-unit');
+          var keep = uEl.value;
+          d.querySelector('#w-units').innerHTML = unitsOptions(this.value, keep);
+        });
+        d.querySelector('[data-x="no"]').addEventListener('click', ADMIN.closeDrawer);
+        d.querySelector('[data-x="ok"]').addEventListener('click', function () {
+          var words = DB.get('words', []);
+          var rec = {
+            id: w ? w.id : nextWid(),
+            w: d.querySelector('#w-w').value.trim(), phon: d.querySelector('#w-phon').value.trim(),
+            mean: d.querySelector('#w-mean').value.trim(), eg: d.querySelector('#w-eg').value.trim(),
+            book: d.querySelector('#w-book').value,
+            unit: d.querySelector('#w-unit').value.trim(),
+            /* 学习态字段（tag / at / right）本页不维护：新建给初值，编辑原样带回 */
+            tag: w ? w.tag : 'new',
+            at: w ? w.at : 0, right: w ? w.right : 0
+          };
+          if (!rec.w || !rec.mean) { ADMIN.toast('单词和释义必填', 'warn'); return; }
+          if (!rec.book) { ADMIN.toast('先建一本词书，再录词条', 'warn'); return; }
+          /* 新填的单元名自动补进词书清单 */
+          var bs = DB.get('wordbooks', []);
+          var bk = bs.filter(function (y) { return y.id === rec.book; })[0];
+          if (bk && rec.unit) {
+            bk.units = bk.units || [];
+            if (bk.units.indexOf(rec.unit) < 0) { bk.units.push(rec.unit); DB.set('wordbooks', bs); }
+          }
+          if (w) words[idx] = rec; else words.push(rec);
+          DB.set('words', words);
+          ADMIN.closeDrawer(); ADMIN.toast('已保存到《' + bookName(rec.book) + '》' + (rec.unit ? ' · ' + rec.unit : ''));
+          render();
+        });
+      }
+    });
+  }
+
+  /* ---------- 行内事件 ---------- */
+  document.getElementById('rows').addEventListener('click', function (e) {
+    var b = e.target.closest('button[data-act]');
+    if (!b) return;
+    var tr = e.target.closest('tr');
+    var words = DB.get('words', []);
+    var w = words[+tr.getAttribute('data-i')];
+    if (!w) return;
+    var act = b.getAttribute('data-act');
+    if (act === 'edit') openForm(w);
+    if (act === 'del') {
+      ADMIN.confirm({
+        title: '删除「' + w.w + '」？', danger: true, ok: '删除',
+        text: '从词表移除后，学生端不再下发这个词（已背记录保留）。',
+        onOk: function () { DB.set('words', words.filter(function (x) { return x !== w; })); ADMIN.toast('已删除'); render(); }
+      });
+    }
+  });
+
+  /* ---------- AI 生成 ---------- */
+  document.getElementById('ai-gen').addEventListener('click', function () {
+    var bs = books();
+    if (!bs.length) { ADMIN.toast('先建一本词书', 'warn'); return; }
+    var cur = fBook || bs[0].id;
+    ADMIN.drawer({
+      title: 'AI 生成一批单词',
+      body: '<div class="ai-bar">' + I('sparkle') + '<span>按词书 + 单元挑词，自动带音标 / 释义 / 例句，生成后落到这本词书下</span></div>' +
+        '<div class="form-grid" style="margin-top:14px">' +
+        '<div class="form-grid two">' +
+          '<div class="field"><label>词书<span class="req">*</span></label><select class="sel" id="g-book">' +
+            bs.map(function (x) { return '<option value="' + x.id + '"' + (x.id === cur ? ' selected' : '') + '>' + E(x.name) + '</option>'; }).join('') +
+          '</select></div>' +
+          '<div class="field"><label>单元</label><input class="inp" id="g-unit" list="g-units" value="' + E(fUnit && fUnit !== '__none__' ? fUnit : '') + '" placeholder="可留空"></div>' +
+          '<datalist id="g-units">' + unitsOptions(cur, fUnit) + '</datalist>' +
+        '</div>' +
+        '<div class="field"><label>数量</label><select class="sel" id="g-n"><option>6</option><option selected>10</option><option>15</option></select></div>' +
+        '<div class="field"><label>来源偏好</label><div class="seg" id="g-src">' +
+          '<button type="button" data-val="book" class="on">按词书顺序往后取</button>' +
+          '<button type="button" data-val="weak">错题 / 阅读里遇到的词优先</button></div></div>' +
+        '</div>',
+      foot: '<button class="btn" data-x="no">取消</button><button class="btn btn-primary" data-x="go">开始生成</button>',
+      onMount: function (d) {
+        ADMIN.seg('#g-src');
+        d.querySelector('#g-book').addEventListener('change', function () {
+          d.querySelector('#g-units').innerHTML = unitsOptions(this.value, d.querySelector('#g-unit').value);
+        });
+        d.querySelector('[data-x="no"]').addEventListener('click', ADMIN.closeDrawer);
+        d.querySelector('[data-x="go"]').addEventListener('click', function () {
+          var bookId = d.querySelector('#g-book').value;
+          var unit = d.querySelector('#g-unit').value.trim();
+          var n = +d.querySelector('#g-n').value;
+          if (!bookId) { ADMIN.toast('请选词书', 'warn'); return; }
+          var go = d.querySelector('[data-x="go"]');
+          go.disabled = true; go.innerHTML = '生成中<span class="dots"><i></i><i></i><i></i></span>';
+          setTimeout(function () {
+            var words = DB.get('words', []);
+            var have = {};
+            words.forEach(function (w) { have[w.w] = 1; });
+            var seeds = [
+              ['improve', '/ɪmˈpruːv/', 'v. 改进；提高', 'Reading every day can improve your English.'],
+              ['describe', '/dɪˈskraɪb/', 'v. 描述；形容', 'Can you describe the picture?'],
+              ['suggest', '/səˈdʒest/', 'v. 建议；提议', 'I suggest we start early.'],
+              ['protect', '/prəˈtekt/', 'v. 保护', 'We must protect the animals.'],
+              ['pronounce', '/prəˈnaʊns/', 'v. 发音', 'How do you pronounce this word?'],
+              ['realize', '/ˈriːəlaɪz/', 'v. 意识到；实现', 'I realized my mistake at once.'],
+              ['refuse', '/rɪˈfjuːz/', 'v. 拒绝', 'She refused to give up.'],
+              ['success', '/səkˈses/', 'n. 成功', 'Hard work leads to success.'],
+              ['support', '/səˈpɔːt/', 'v. 支持 n. 支持', 'My parents support my hobby.'],
+              ['treasure', '/ˈtreʒə(r)/', 'n. 宝藏 v. 珍惜', 'Time is a kind of treasure.'],
+              ['volunteer', '/ˌvɒlənˈtɪə(r)/', 'n. 志愿者 v. 自愿', 'She works as a volunteer.'],
+              ['wonder', '/ˈwʌndə(r)/', 'v. 想知道 n. 奇迹', 'I wonder why he is late.'],
+              ['achievement', '/əˈtʃiːvmənt/', 'n. 成就；成绩', 'It is a great achievement.'],
+              ['communicate', '/kəˈmjuːnɪkeɪt/', 'v. 交流；沟通', 'We communicate by email.'],
+              ['encourage', '/ɪnˈkʌrɪdʒ/', 'v. 鼓励', 'My teacher encouraged me to try again.']
+            ].filter(function (s) { return !have[s[0]]; }).slice(0, n);
+            seeds.forEach(function (s, si) {
+              words.push({ id: nextWid(si + 1), w: s[0], phon: s[1], mean: s[2], eg: s[3], tag: 'new', book: bookId, unit: unit, at: 0, right: 0 });
+            });
+            /* 有单元就补进词书清单 */
+            if (unit) {
+              var bs2 = DB.get('wordbooks', []);
+              var bk = bs2.filter(function (y) { return y.id === bookId; })[0];
+              if (bk) { bk.units = bk.units || []; if (bk.units.indexOf(unit) < 0) { bk.units.push(unit); DB.set('wordbooks', bs2); } }
+            }
+            DB.set('words', words);
+            ADMIN.closeDrawer();
+            ADMIN.toast('已生成 ' + seeds.length + ' 个新词（' + bookName(bookId) + (unit ? ' · ' + unit : '') + '）');
+            fBook = bookId; fUnit = unit;
+            render();
+          }, 1200);
+        });
+      }
+    });
+  });
+
+  /* ---------- 批量导入 ---------- */
+  document.getElementById('import').addEventListener('click', function () {
+    var bs = books();
+    if (!bs.length) { ADMIN.toast('先建一本词书', 'warn'); return; }
+    var cur = fBook || bs[0].id;
+    ADMIN.drawer({
+      title: '批量导入',
+      body: '<p class="hint" style="margin-bottom:10px">每行一个词：<code>word | 音标 | 释义 | 例句</code>，竖线分隔，后两项可留空。</p>' +
+        '<textarea class="ta mono" style="min-height:150px;white-space:pre" id="i-md">' +
+        'anxious | /ˈæŋkʃəs/ | adj. 焦虑的 | I feel anxious about the exam.\napologize | /əˈpɒlədʒaɪz/ | v. 道歉 | You should apologize to her.\napplaud | /əˈplɔːd/ | v. 鼓掌；称赞 | The crowd applauded loudly.</textarea>' +
+        '<div class="form-grid two" style="margin-top:12px">' +
+          '<div class="field"><label>词书<span class="req">*</span></label><select class="sel" id="i-book">' +
+            bs.map(function (x) { return '<option value="' + x.id + '"' + (x.id === cur ? ' selected' : '') + '>' + E(x.name) + '</option>'; }).join('') +
+          '</select></div>' +
+          '<div class="field"><label>单元</label><input class="inp" id="i-unit" list="i-units" value="' + E(fUnit && fUnit !== '__none__' ? fUnit : '') + '" placeholder="可留空"></div>' +
+          '<datalist id="i-units">' + unitsOptions(cur, fUnit) + '</datalist>' +
+        '</div>',
+      foot: '<button class="btn" data-x="no">取消</button><button class="btn btn-primary" data-x="ok">导入</button>',
+      onMount: function (d) {
+        d.querySelector('#i-book').addEventListener('change', function () {
+          d.querySelector('#i-units').innerHTML = unitsOptions(this.value, d.querySelector('#i-unit').value);
+        });
+        d.querySelector('[data-x="no"]').addEventListener('click', ADMIN.closeDrawer);
+        d.querySelector('[data-x="ok"]').addEventListener('click', function () {
+          var bookId = d.querySelector('#i-book').value;
+          var unit = d.querySelector('#i-unit').value.trim();
+          if (!bookId) { ADMIN.toast('请选词书', 'warn'); return; }
+          var lines = d.querySelector('#i-md').value.split('\n').filter(function (x) { return x.trim(); });
+          var words = DB.get('words', []);
+          var n = 0;
+          lines.forEach(function (line) {
+            var p = line.split('|').map(function (x) { return x.trim(); });
+            if (!p[0]) return;
+            words.push({ id: nextWid(n + 1), w: p[0], phon: p[1] || '', mean: p[2] || '', eg: p[3] || '', tag: 'new', book: bookId, unit: unit, at: 0, right: 0 });
+            n++;
+          });
+          if (unit) {
+            var bs2 = DB.get('wordbooks', []);
+            var bk = bs2.filter(function (y) { return y.id === bookId; })[0];
+            if (bk) { bk.units = bk.units || []; if (bk.units.indexOf(unit) < 0) { bk.units.push(unit); DB.set('wordbooks', bs2); } }
+          }
+          DB.set('words', words);
+          ADMIN.closeDrawer();
+          ADMIN.toast('已导入 ' + n + ' 个词 →《' + bookName(bookId) + '》' + (unit ? ' · ' + unit : ''));
+          fBook = bookId; fUnit = unit;
+          render();
+        });
+      }
+    });
+  });
+
+  document.getElementById('kw').addEventListener('input', function () { kw = this.value.trim(); render(); });
+  render();
+})();
+</script>
+</body>
+</html>

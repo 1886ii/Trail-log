@@ -1,0 +1,682 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="light">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#F5F6F8">
+<title>阅读 · 学迹</title>
+<script>document.documentElement.classList.add('js-on');</script>
+<link rel="stylesheet" href="style.css?v=20261021a">
+</head>
+<body data-page="reading">
+
+<div class="app">
+<main class="main">
+
+  <header class="topbar" id="topbar"></header>
+
+  <div class="content">
+
+    <!-- 视图切换：在读 / 书架 -->
+    <div class="view-tabs reveal" role="tablist" aria-label="阅读视图切换">
+      <button type="button" class="view-tab active" id="tab-reading" data-view="reading"
+              role="tab" aria-selected="true" aria-controls="view-reading">在读</button>
+      <button type="button" class="view-tab" id="tab-shelf" data-view="shelf"
+              role="tab" aria-selected="false" aria-controls="view-shelf">书架</button>
+    </div>
+
+    <!-- ============ 视图一：在读（纸质书伴读：只管「读了没」） ============ -->
+    <div id="view-reading" role="tabpanel" aria-labelledby="tab-reading">
+
+      <!-- 当前在读 -->
+      <section class="hero reveal">
+        <div class="hero-ring" id="rd-ring" data-ring="0" role="img" aria-label="本书阅读进度">
+          <svg viewBox="0 0 120 120" aria-hidden="true">
+            <circle class="track" cx="60" cy="60" r="50"></circle>
+            <circle class="val" id="ring-val" cx="60" cy="60" r="50"></circle>
+          </svg>
+          <div class="hero-ring-txt">
+            <b id="ring-n">0</b><span>% 读</span>
+          </div>
+        </div>
+
+        <div class="hero-body">
+          <p class="hero-title" id="rd-title"></p>
+          <p class="hero-meta" id="rd-meta"></p>
+          <div class="chips" id="rd-chips"></div>
+          <div style="margin-top:14px; display:flex; gap:10px; flex-wrap:wrap">
+            <button class="btn-brand" id="btn-checkin" type="button">今日打卡</button>
+            <button class="btn-ghost" id="btn-toc-go" type="button">看目录</button>
+            <button class="btn-ghost" type="button" onclick="switchView('shelf')">换本书</button>
+          </div>
+
+          <!-- 打卡面板：读完点一下，记下今天读到第几篇 -->
+          <div class="rd-panel" id="check-panel" hidden>
+            <p class="rd-panel-t">今天读到第几篇？</p>
+            <div class="rd-stepper">
+              <button type="button" id="ch-minus" aria-label="减一篇">−</button>
+              <b id="ch-num">1</b>
+              <button type="button" id="ch-plus" aria-label="加一篇">＋</button>
+              <span class="rd-panel-hint">读了多久可选可不选</span>
+            </div>
+            <div class="rd-mins" id="rd-mins">
+              <button class="rd-min" type="button" data-min="15">15 分钟</button>
+              <button class="rd-min" type="button" data-min="30">30 分钟</button>
+              <button class="rd-min" type="button" data-min="45">45 分钟</button>
+              <button class="rd-min" type="button" data-min="60">1 小时</button>
+            </div>
+            <button class="btn-brand" id="btn-save-checkin" type="button">记下 · 打卡</button>
+          </div>
+        </div>
+      </section>
+
+      <!-- 目录：分页，点篇目进阅读页 -->
+      <section class="section reveal">
+        <h2 class="section-title">目录 <span class="count" id="toc-sub"></span></h2>
+        <div class="panel">
+          <div class="toc" id="toc"></div>
+          <div class="toc-pager" id="toc-pager" hidden></div>
+          <div class="check-strip">
+            <span>最近 7 天</span>
+            <i id="strip7" aria-hidden="true"></i>
+            <span id="strip-txt"></span>
+          </div>
+        </div>
+      </section>
+
+      <!-- 留言弹幕墙：读完整本书才出现，替代读后感卡 -->
+      <section class="section reveal" id="finish-sec" hidden>
+        <h2 class="section-title">留言墙 <span class="count" id="mw-sub"></span></h2>
+        <div class="panel">
+          <div class="dm-stage" id="msg-wall"></div>
+          <p class="dm-hint">留言像弹幕一样慢慢漂过 · 鼠标放上去会停下来</p>
+          <div class="msg-compose">
+            <div class="emoji-wrap">
+              <button class="emoji-btn" id="msg-emoji" type="button" title="表情" aria-label="插入表情">😊</button>
+              <div class="emoji-panel cmt-emoji-pop" id="emoji-panel" hidden></div>
+            </div>
+            <input id="msg-in" maxlength="60" placeholder="写一句话，留给这本书…">
+            <button class="btn-brand" id="msg-add" type="button">贴上去</button>
+          </div>
+        </div>
+      </section>
+    </div>
+
+    <!-- ============ 视图二：书架 ============ -->
+    <div id="view-shelf" role="tabpanel" aria-labelledby="tab-shelf" hidden>
+
+      <section class="section reveal" style="margin-top:18px">
+        <h2 class="section-title">书架 <span class="count">· 书单由管理端设置，点书即可切换在读</span></h2>
+        <div class="shelf-grid" id="shelf-grid"></div>
+      </section>
+
+    </div>
+
+  </div>
+</main>
+</div>
+
+<script src="emoji.js?v=20261021a"></script>
+<script src="books.js?v=20261021a"></script>
+<script src="fx.js?v=20261021a"></script>
+<script src="app.js?v=20261021a"></script>
+<script>
+/* ============================================================
+   阅读伴读：打卡 · 目录（分页）· 读后感收尾
+   每篇一问在阅读页读完打卡后弹出（books.js 的 qEnabled 控制本书是否配题）
+   书目数据在 books.js（BOOKS / RD），本页只管渲染与交互
+   ============================================================ */
+
+/* ---------- 视图切换 ---------- */
+function switchView(v) {
+  var isReading = v === 'reading';
+  document.getElementById('view-reading').hidden = !isReading;
+  document.getElementById('view-shelf').hidden   = isReading;
+  document.getElementById('tab-reading').classList.toggle('active', isReading);
+  document.getElementById('tab-shelf').classList.toggle('active', !isReading);
+  document.getElementById('tab-reading').setAttribute('aria-selected', isReading);
+  document.getElementById('tab-shelf').setAttribute('aria-selected', !isReading);
+}
+document.getElementById('tab-reading').addEventListener('click', function () { switchView('reading'); });
+document.getElementById('tab-shelf').addEventListener('click',   function () { switchView('shelf'); });
+document.getElementById('btn-toc-go').addEventListener('click', function () {
+  document.getElementById('toc').scrollIntoView({ behavior: 'smooth', block: 'start' });
+});
+
+/* ---------- 小工具 ---------- */
+function escHtml(s) {
+  return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;')
+                  .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+var toastTimer = 0;
+function toast(msg) {
+  var el = document.getElementById('toast');
+  if (!el) return;
+  el.textContent = msg;
+  el.classList.add('on');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(function () { el.classList.remove('on'); }, 2200);
+}
+
+/* ---------- 状态 ---------- */
+var S = RD.load();
+var BOOK = BOOKS[S.cur];
+var BP = S.books[S.cur];                 /* 当前书的进度 */
+
+/* ---------- 书架（动态渲染，点书即切换在读） ---------- */
+function renderShelf() {
+  var html = '';
+  Object.keys(BOOKS).forEach(function (id) {
+    var B = BOOKS[id], b = S.books[id], cur = id === S.cur;
+    var pct = Math.round(b.done / B.total * 100);
+    var state = cur ? ('在读 · ' + pct + '%')
+              : (pct >= 100 ? '已读完 · 点开回看' : (b.done > 0 ? '读到 ' + pct + '% · 续读' : '未开始 · 点开开读'));
+    html += '<button class="shelf-book' + (cur ? ' current' : '') + '" type="button" data-book="' + id + '">' +
+            '<span class="book-spine">' + escHtml(B.title.charAt(0)) + '</span>' +
+            '<span class="shelf-main">' +
+              '<span class="shelf-title">' + escHtml(B.title) + '</span>' +
+              '<span class="shelf-meta">' + escHtml(B.author) + ' · ' + B.total + ' ' + B.unitName + '</span>' +
+              '<span class="book-prog"><i style="width:' + pct + '%"></i></span>' +
+              '<span class="shelf-state">' + state + '</span>' +
+            '</span></button>';
+  });
+  document.getElementById('shelf-grid').innerHTML = html;
+}
+document.getElementById('shelf-grid').addEventListener('click', function (e) {
+  var btn = e.target.closest('.shelf-book');
+  if (!btn) return;
+  pickBook(btn.dataset.book);
+});
+function pickBook(id) {
+  if (id === S.cur) { switchView('reading'); return; }
+  S.cur = id;
+  BOOK = BOOKS[id];
+  BP = S.books[id];
+  tocPage = 1;
+  RD.save(S);
+  renderAll();
+  switchView('reading');
+  window.scrollTo(0, 0);
+  toast('已切换到《' + BOOK.title + '》');
+}
+
+/* ---------- hero / 打卡 ---------- */
+function curChapter() { return RD.curChapter(S); }
+
+function renderHero() {
+  var pct  = Math.round(BP.done / BOOK.total * 100);
+  var done = Math.round(314.16 * pct / 100);
+  var ring = document.getElementById('ring-val');
+  if (ring) ring.style.strokeDasharray = done + ' ' + (314.16 - done);
+  document.getElementById('rd-ring').setAttribute('data-ring', pct);
+  document.getElementById('ring-n').textContent = pct;
+
+  var streak = RD.streak(S.checkins);
+  document.getElementById('rd-title').textContent =
+    '《' + BOOK.title + '》· ' + BOOK.unitName + ' ' + curChapter();
+  document.getElementById('rd-meta').textContent =
+    '已读 ' + BP.done + ' / ' + BOOK.total + ' ' + BOOK.unitName + ' · 连续打卡 ' + streak + ' 天';
+
+  var chips = '<span class="chip brand">' + escHtml(BOOK.tag || '必读书目') + '</span>' +
+              '<span class="chip">' + escHtml(BOOK.author) + '</span>' +
+              '<span class="chip">共 ' + BOOK.total + ' ' + BOOK.unitName + '</span>' +
+              (BOOK.qEnabled ? '<span class="chip">配阅读题</span>' : '');
+  document.getElementById('rd-chips').innerHTML = chips;
+
+  var btn = document.getElementById('btn-checkin');
+  var isToday = !!S.checkins[RD.dstr(new Date())];
+  btn.className = isToday ? 'btn-ghost' : 'btn-brand';
+  btn.disabled = isToday;
+  btn.textContent = isToday
+    ? '今日已打卡 · ' + BOOK.unitName + ' ' + curChapter() + ' 已读'
+    : '今日打卡 · 读完' + BOOK.unitName + ' ' + curChapter();
+}
+
+/* 打卡面板 */
+var pendingCh = 0, pendingMin = 0;
+document.getElementById('btn-checkin').addEventListener('click', function () {
+  var p = document.getElementById('check-panel');
+  if (!p.hidden) { p.hidden = true; return; }
+  pendingCh = curChapter();
+  pendingMin = 0;
+  document.getElementById('ch-num').textContent = pendingCh;
+  Array.prototype.forEach.call(document.querySelectorAll('#rd-mins .rd-min'),
+    function (b) { b.classList.remove('on'); });
+  p.hidden = false;
+});
+document.getElementById('ch-minus').addEventListener('click', function () {
+  pendingCh = Math.max(curChapter(), pendingCh - 1);
+  document.getElementById('ch-num').textContent = pendingCh;
+});
+document.getElementById('ch-plus').addEventListener('click', function () {
+  pendingCh = Math.min(BOOK.total, pendingCh + 1);
+  document.getElementById('ch-num').textContent = pendingCh;
+});
+document.getElementById('rd-mins').addEventListener('click', function (e) {
+  var b = e.target.closest('.rd-min');
+  if (!b) return;
+  var on = b.classList.contains('on');
+  Array.prototype.forEach.call(this.querySelectorAll('.rd-min'),
+    function (x) { x.classList.remove('on'); });
+  if (on) { pendingMin = 0; }
+  else { b.classList.add('on'); pendingMin = parseInt(b.dataset.min, 10) || 0; }
+});
+document.getElementById('btn-save-checkin').addEventListener('click', function () {
+  RD.checkin(S, pendingCh, pendingMin);
+  BP = S.books[S.cur];
+  document.getElementById('check-panel').hidden = true;
+  renderAll();
+  if (window.FX) FX.burstFrom(this, 14);
+  toast(pendingCh >= BOOK.total
+    ? '打卡成功 · 全书读完了！'
+    : '打卡成功 · ' + BOOK.unitName + ' ' + pendingCh + ' 已读');
+});
+
+/* ---------- 目录：分页（正式版 = LIMIT/OFFSET，避免长书目一次拉全表） ---------- */
+var PAGE_SIZE = 20, tocPage = 1;
+
+function tocPages() { return Math.ceil(BOOK.total / PAGE_SIZE); }
+
+function renderToc() {
+  var pages = tocPages();
+  if (tocPage > pages) tocPage = pages;
+  if (tocPage < 1) tocPage = 1;
+  var start = (tocPage - 1) * PAGE_SIZE + 1;
+  var end   = Math.min(BOOK.total, tocPage * PAGE_SIZE);
+  var cur = curChapter(), html = '';
+
+  for (var n = start; n <= end; n++) {
+    var u = BOOK.units[n - 1], cls = 'toc-row';
+    if (n <= BP.done) cls += ' done';
+    if (n === cur && BP.done < BOOK.total) cls += ' cur';
+    var ask = BOOK.qEnabled && BOOK.asks && BOOK.asks[n];
+    var dot = '';
+    if (ask) dot = BP.answers[n]
+      ? '<i class="toc-dot ok" title="一问已答"></i>'
+      : '<i class="toc-dot warn" title="一问待答"></i>';
+    html += '<button type="button" class="' + cls + '" data-ch="' + n + '">' +
+            '<span class="toc-ck">' + (n <= BP.done ? '✓' : n) + '</span>' +
+            '<span class="toc-main">' +
+              '<b class="toc-t">' + escHtml(u.t) + '</b>' +
+              '<small class="toc-b">' + escHtml(u.b) + '</small>' +
+            '</span>' + dot +
+            '<span class="toc-go">去阅读 ›</span>' +
+            '</button>';
+  }
+  document.getElementById('toc').innerHTML = html;
+
+  /* 分页器（只有一页就藏起来） */
+  var pg = document.getElementById('toc-pager');
+  if (pages > 1) {
+    pg.hidden = false;
+    pg.innerHTML =
+      '<button type="button" class="toc-pg" data-pg="' + (tocPage - 1) + '"' + (tocPage <= 1 ? ' disabled' : '') + '>‹ 上一页</button>' +
+      '<span class="toc-pg-n">第 ' + tocPage + ' / ' + pages + ' 页 · ' + start + '–' + end + ' ' + BOOK.unitName + '</span>' +
+      '<button type="button" class="toc-pg" data-pg="' + (tocPage + 1) + '"' + (tocPage >= pages ? ' disabled' : '') + '>下一页 ›</button>';
+  } else {
+    pg.hidden = true;
+    pg.innerHTML = '';
+  }
+
+  document.getElementById('toc-sub').textContent =
+    '· 已读 ' + BP.done + ' / ' + BOOK.total + ' ' + BOOK.unitName + ' · 点篇目进入阅读';
+
+  /* 最近 7 天小条 */
+  var strip = '', d = new Date();
+  d.setDate(d.getDate() - 6);
+  for (var i = 0; i < 7; i++) {
+    strip += '<b class="' + (S.checkins[RD.dstr(d)] ? 'on' : '') + '"></b>';
+    d.setDate(d.getDate() + 1);
+  }
+  document.getElementById('strip7').innerHTML = strip;
+  var now = new Date(), mc = 0;
+  Object.keys(S.checkins).forEach(function (k) {
+    var p = k.split('-');
+    if (+p[0] === now.getFullYear() && +p[1] === now.getMonth() + 1) mc++;
+  });
+  document.getElementById('strip-txt').textContent =
+    '连续 ' + RD.streak(S.checkins) + ' 天 · 本月 ' + mc + ' 次打卡';
+}
+document.getElementById('toc-pager').addEventListener('click', function (e) {
+  var b = e.target.closest('.toc-pg');
+  if (!b || b.disabled) return;
+  tocPage = parseInt(b.dataset.pg, 10);
+  renderToc();
+});
+document.getElementById('toc').addEventListener('click', function (e) {
+  var b = e.target.closest('.toc-row');
+  if (!b) return;
+  location.href = 'read.html?ch=' + b.dataset.ch;
+});
+
+/* ---------- 留言弹幕墙：读完纪念，替代读后感卡 ---------- */
+/* 表情：弹幕里把 emoji 放大显示（含 ZWJ 序列 / 变体选择符） */
+var EMOJI_RE = /(\p{Extended_Pictographic}(?:\uFE0F|\u200D\p{Extended_Pictographic})*)/gu;
+function richText(raw) {
+  return escHtml(raw).replace(EMOJI_RE, '<b class="emj">$1</b>');
+}
+function renderMsgWall() {
+  var sec = document.getElementById('finish-sec');
+  if (BP.done < BOOK.total) { sec.hidden = true; return; }
+  sec.hidden = false;
+  document.getElementById('mw-sub').textContent =
+    '· 《' + BOOK.title + '》读完纪念 · 写给这本书的话';
+
+  /* 弹幕来源：自己贴的留言 + 一路答过的「每篇一问」 */
+  var cards = (BP.msgs || []).slice();
+  Object.keys(BP.answers).forEach(function (n) {
+    var a = BP.answers[n];
+    if (a && a.text) cards.push({ t: a.text, meta: '一问 · ' + BOOK.unitName + ' ' + n });
+  });
+
+  var wall = document.getElementById('msg-wall');
+  if (!cards.length) {
+    wall.innerHTML = '<p class="msg-empty">这面墙还空着 —— 写第一句话贴吧。</p>';
+    wall.style.height = 'auto';
+    return;
+  }
+  wall.innerHTML = '';
+  cards.forEach(function (m, i) { wall.appendChild(makeDmEl(m, i)); });
+  layoutDm(wall);
+}
+/* 造一颗弹幕节点（渲染与新贴共用） */
+function makeDmEl(m, idx) {
+  var raw = String(m.t || '');
+  if (raw.length > 60) raw = raw.slice(0, 60) + '…';
+  var el = document.createElement('span');
+  el.className = 'dm-item mh' + ((idx % 5) + 1);
+  el.innerHTML = richText(raw) +
+    '<i class="dm-meta">' + escHtml(m.meta || RD.dstr(new Date())) + '</i>';
+  return el;
+}
+/* 新贴的留言：只追加节点、延迟 0（从右缘外出发），不打断已有弹幕 */
+function appendDm(m, idx) {
+  var wall = document.getElementById('msg-wall');
+  var empty = wall.querySelector('.msg-empty');
+  if (empty) empty.remove();
+  var el = makeDmEl(m, idx);
+  el.classList.add('dm-new');                       /* 醒目态：描边+光环+NEW 角标 */
+  wall.insertBefore(el, wall.firstChild);
+  var w = wall.clientWidth || 600;
+  var lanes = w < 500 ? 4 : 5;
+  wall.style.height = (lanes * 56) + 'px';
+  var pick = pickLane(w, lanes, el, el.offsetWidth);
+  var laneItems = pick.hold ? laneData(lanes)[pick.lane] : null;   /* 此刻 el 还没 top，不会算到自己 */
+  el.style.top = (pick.lane * 56 + 4) + 'px';
+  if (pick.hold) {
+    el.classList.add('dm-hold');                    /* 该车道暂不可用：先挂起排队 */
+    /* 停在右缘外排队：避开正在进站的车和已排队的车，互不重叠 */
+    var parkLeft = w + 4;
+    laneItems.forEach(function (o) { if (o.x + o.w > parkLeft) parkLeft = o.x + o.w + 24; });
+    el.style.marginLeft = Math.max(0, parkLeft - w) + 'px';
+  }
+  var dist = w + el.offsetWidth;
+  el.style.setProperty('--dist', dist + 'px');
+  var dur = DM_CROSS * dist / w;                    /* 与普通弹幕同一速度 */
+  el.style.animationDuration = dur.toFixed(1) + 's';
+  el.style.animationDelay = '0s';
+  enforceLanes();                                   /* 立即巡检一次，放行/挂起即时生效 */
+  setTimeout(function () { el.classList.remove('dm-new'); }, 5200);  /* 3 轮光环后回归普通弹幕 */
+}
+/* 弹幕布局：分车道、进场满屏；速度全墙统一（时长 = 22s × 距离/舞台宽） */
+var DM_CROSS = 22;   /* 跑完一个舞台宽度的基准秒数，新贴/普通弹幕一致 */
+/* ---- 车道状态：用 getBoundingClientRect 拿真实位置（悬停暂停时也准确） ---- */
+function laneData(lanes) {
+  var wall = document.getElementById('msg-wall');
+  var rect = wall.getBoundingClientRect();
+  var arr = [];
+  for (var i = 0; i < lanes; i++) arr.push([]);
+  Array.prototype.forEach.call(wall.querySelectorAll('.dm-item'), function (el) {
+    if (!el.style.top) return;
+    var lane = Math.round((parseInt(el.style.top, 10) - 4) / 56);
+    if (lane < 0 || lane >= lanes) return;
+    arr[lane].push({
+      el: el,
+      x: el.getBoundingClientRect().left - rect.left,   /* 左缘相对舞台 */
+      w: el.offsetWidth,
+      paused: getComputedStyle(el).animationPlayState === 'paused'
+    });
+  });
+  return arr;
+}
+/* 假如有一条 (itX, itW) 的新车进入该车道，会不会和已有的撞：
+   - 前方有「暂停中」的车（悬停/排队）→ 迟早追尾 → 撞
+   - 与任一行驶中的车此刻横向重叠 → 同速永不自愈 → 撞   */
+function hasRisk(laneItems, itX, itW, excludeEl) {
+  return laneItems.some(function (o) {
+    if (o.el === excludeEl) return false;
+    if (o.x >= itX + itW) return false;               /* o 完全在我右侧（身后），追不上我 */
+    if (o.paused) return o.x + o.w > 0;               /* 暂停车只要还在/伸进屏幕就会被我追上 */
+    return o.x + o.w > itX;                           /* 行驶车：与我重叠则同速永远重叠 */
+  });
+}
+/* 挑车道：找「插进去绝不撞」的车道；多条安全时挑空间最大的；
+   全都不安全时挑「阻塞车最早让出右缘」的车道，新车先挂起排队 */
+function pickLane(w, lanes, elNew, newW) {
+  var data = laneData(lanes), best = -1, bestGap = -Infinity, fb = -1, fbPoke = Infinity;
+  for (var i = 0; i < lanes; i++) {
+    var items = data[i];
+    if (!hasRisk(items, w, newW, elNew)) {
+      var gap = Infinity;
+      items.forEach(function (o) { if (o.x > w) gap = Math.min(gap, o.x - w); });
+      if (gap > bestGap) { bestGap = gap; best = i; }
+    } else {
+      var poke = Infinity;
+      items.forEach(function (o) {
+        if (o.el !== elNew && !o.paused && o.x + o.w > w && o.x < w + newW)
+          poke = Math.min(poke, o.x + o.w - w);
+        if (o.el !== elNew && o.paused) poke = Math.min(poke, 0);
+      });
+      if (poke < fbPoke) { fbPoke = poke; fb = i; }
+    }
+  }
+  if (best >= 0) return { lane: best, hold: false };
+  if (fb >= 0)   return { lane: fb,   hold: true  };
+  return { lane: Math.floor(lanes / 2), hold: true };
+}
+/* 车道排队：每 400ms 巡检。同速车道从前到后逐个看：
+   ① 用户悬停暂停的车：原地不动，挡住后面整条车道（避免追尾重叠）；
+   ② 被堵挂起的车：只有队首有资格放行——条件是前方行驶车的尾巴已收进
+      屏幕、且没有悬停车挡路；放行时清掉排队外移的 margin，从右缘进站；
+   ③ 正常行驶的车：被前车堵住就原地冻结，前车动了下一轮自动放行。
+   修复卡死：排队车之间互不作为阻塞对象（此前互相等 = 永久卡死），
+   且只看「前方」的车——后方车同速永远追不上，不构成威胁 */
+function enforceLanes() {
+  if (document.getElementById('finish-sec').hidden) return;
+  var wall = document.getElementById('msg-wall');
+  var w = wall.clientWidth || 600;
+  var lanes = w < 500 ? 4 : 5;
+  laneData(lanes).forEach(function (items) {
+    var list = items.slice().sort(function (a, b) { return a.x - b.x; });  /* 前到后 */
+    var blocked = false;
+    list.forEach(function (it) {
+      var isHold = it.el.classList.contains('dm-hold');
+      var isHover = it.paused && !isHold;             /* 用户正悬停这条 */
+      if (isHover) { blocked = true; return; }        /* 挡住后面全部 */
+      if (!isHold) {
+        it.el.classList.toggle('dm-hold', blocked);   /* 行驶车被堵：原地冻结 */
+        return;
+      }
+      if (blocked) return;                            /* 队首没走，后面的继续排 */
+      var ok = items.every(function (o) {
+        if (o.el === it.el) return true;
+        if (o.el.classList.contains('dm-hold')) return true;  /* 后面的排队车不算 */
+        var op = getComputedStyle(o.el).animationPlayState === 'paused';  /* 实时取：前车可能本轮刚放行 */
+        if (op) return o.x + o.w <= 0;                /* 悬停车：完全漂出屏幕才不挡 */
+        return o.x + o.w <= w - 4;                    /* 行驶车：尾巴收进屏幕内 */
+      });
+      if (ok) {
+        it.el.classList.remove('dm-hold');
+        it.el.style.marginLeft = '';
+      } else {
+        blocked = true;                               /* 放不了：后面继续等 */
+      }
+    });
+  });
+}
+setInterval(enforceLanes, 400);
+function layoutDm(stage) {
+  var items = stage.querySelectorAll('.dm-item');
+  if (!items.length) return;
+  var w = stage.clientWidth || 600;
+  var lanes = w < 500 ? 4 : 5;
+  stage.style.height = (lanes * 56) + 'px';
+  var byLane = [];
+  for (var i = 0; i < lanes; i++) byLane.push([]);
+  Array.prototype.forEach.call(items, function (el, i) {
+    var lane = i % lanes;
+    el.style.top = (lane * 56 + 4) + 'px';
+    var dist = w + el.offsetWidth;
+    el.style.setProperty('--dist', dist + 'px');
+    var dur = DM_CROSS * dist / w;
+    el.style.animationDuration = dur.toFixed(1) + 's';
+    el.style.animationDelay = '-' + (((i * 5.3) + dur / 2) % dur).toFixed(2) + 's';  /* 负延迟进场即满屏 */
+    byLane[lane].push(el);
+  });
+  /* 同车道去重叠：同速下间距恒定，左到右强制最小间距（必要时改负延迟右移） */
+  var GAP = 48;
+  byLane.forEach(function (list) {
+    list.sort(function (a, b) {                   /* 按当前左缘 x 升序（左=前车） */
+      var da = parseFloat(a.style.getPropertyValue('--dist'));
+      var db = parseFloat(b.style.getPropertyValue('--dist'));
+      return (w - da * (-parseFloat(a.style.animationDelay) / parseFloat(a.style.animationDuration)))
+           - (w - db * (-parseFloat(b.style.animationDelay) / parseFloat(b.style.animationDuration)));
+    });
+    var prevRight = -Infinity;
+    list.forEach(function (el) {
+      var dist = parseFloat(el.style.getPropertyValue('--dist'));
+      var dur  = parseFloat(el.style.animationDuration);
+      var p = -parseFloat(el.style.animationDelay) / dur;
+      var x = w - dist * p;
+      if (x < prevRight + GAP) x = prevRight + GAP;
+      prevRight = x + el.offsetWidth;
+      el.style.animationDelay = (-(w - x) / dist * dur).toFixed(2) + 's';
+    });
+  });
+}
+var dmRsTimer = 0;
+window.addEventListener('resize', function () {
+  clearTimeout(dmRsTimer);
+  dmRsTimer = setTimeout(function () {
+    if (!document.getElementById('finish-sec').hidden) renderMsgWall();
+  }, 300);
+});
+document.getElementById('msg-add').addEventListener('click', function () {
+  var inp = document.getElementById('msg-in');
+  var v = inp.value.trim();
+  if (!v) { toast('先写一句话，再贴上去'); inp.focus(); return; }
+  BP.msgs = BP.msgs || [];
+  BP.msgs.unshift({ t: v, meta: '留言 · ' + RD.dstr(new Date()), d: Date.now() });
+  RD.save(S);
+  inp.value = '';
+  appendDm(BP.msgs[0], 0);
+  if (window.FX) FX.burstFrom(this, 12);
+  toast('已贴上留言墙');
+});
+document.getElementById('msg-in').addEventListener('keydown', function (e) {
+  if (e.key === 'Enter') { e.preventDefault(); document.getElementById('msg-add').click(); }
+});
+
+/* ---------- 表情面板：插入到光标处（数据与分类在 emoji.js，与首页评论共用） ---------- */
+(function initEmoji() {
+  var btn   = document.getElementById('msg-emoji');
+  var panel = document.getElementById('emoji-panel');
+  var inp   = document.getElementById('msg-in');
+  if (!btn || !panel || !inp) return;
+  EMOJI.render(panel, { def: '学习' });   /* 阅读场景默认停在「学习」 */
+  /* 定位：与首页评论面板同一套 —— 面板挂在原位但用 fixed 浮层，
+     优先浮在按钮上方，上方放不下就落到下方；左右夹在视口内。
+     避免卡片内 absolute 被祖先裁剪 / 在窄屏被挤成长条 */
+  function placeEmojiPop() {
+    var r  = btn.getBoundingClientRect();
+    var pw = panel.offsetWidth  || 258;
+    var ph = panel.offsetHeight || 250;
+    var left = Math.min(Math.max(8, r.left), Math.max(8, window.innerWidth - pw - 8));
+    var top  = r.top - ph - 8;
+    if (top < 8) top = Math.min(r.bottom + 8, window.innerHeight - ph - 8);
+    panel.style.left = Math.round(left) + 'px';
+    panel.style.top  = Math.round(Math.max(8, top)) + 'px';
+  }
+  btn.addEventListener('click', function (e) {
+    e.stopPropagation();
+    panel.hidden = !panel.hidden;
+    if (!panel.hidden) placeEmojiPop();
+  });
+  panel.addEventListener('click', function (e) {
+    var c = e.target.closest('.emoji-cell');
+    if (!c) return;
+    var em = c.textContent;
+    if (inp.value.length + em.length > 60) return;   /* 程序赋值绕过 maxlength，自己挡一道 */
+    var s = inp.selectionStart || inp.value.length;
+    var t = inp.selectionEnd || s;
+    inp.value = inp.value.slice(0, s) + em + inp.value.slice(t);
+    var pos = s + em.length;
+    inp.focus();
+    try { inp.setSelectionRange(pos, pos); } catch (err) {}
+  });
+  document.addEventListener('click', function (e) {
+    if (!panel.hidden && !panel.contains(e.target) && e.target !== btn) panel.hidden = true;
+  });
+})();
+
+/* ---------- 渲染总入口 ---------- */
+function renderAll() {
+  renderHero();
+  renderToc();
+  renderShelf();
+  renderMsgWall();
+}
+renderAll();
+
+/* ?emojitest：无头验证 —— 强制显示留言墙 → 开表情面板 → 切分类 → 插入到光标处 */
+if (/emojitest/.test(location.search)) {
+  try {
+    var _fs = document.getElementById('finish-sec');
+    if (_fs) _fs.hidden = false;
+    var _btn = document.getElementById('msg-emoji');
+    var _pan = document.getElementById('emoji-panel');
+    var _imp = document.getElementById('msg-in');
+    var _keep = /keep/.test(location.search);       /* &keep：截图用，保持面板打开并滚到位 */
+    if (_keep) {
+      /* 截图用：收起平滑滚动靠不住（无头会冻在半路），直接藏掉上方区块。
+         必须在开面板之前 —— 面板现为 fixed 浮层，按最终布局定位 */
+      Array.prototype.forEach.call(document.querySelectorAll('#view-reading > .section'), function (s) {
+        if (s.id !== 'finish-sec') s.style.display = 'none';
+      });
+    }
+    _btn.click();                                   /* 开面板 */
+    var _open = !_pan.hidden;
+    var _tabs = _pan.querySelectorAll('.emoji-tab');
+    var _c0 = _pan.querySelectorAll('.emoji-cell').length;
+    var _on0 = _pan.querySelector('.emoji-tab.on').getAttribute('data-cat');
+    _pan.querySelector('.emoji-tab[data-cat="自然"]').click();   /* 切分类 */
+    var _cells = _pan.querySelectorAll('.emoji-cell');
+    _imp.value = '好看';
+    try { _imp.setSelectionRange(2, 2); } catch (e) {}
+    _cells[0].click();                               /* 自然类第 1 个 = 🌙 */
+    _pan.querySelector('.emoji-tab[data-cat="加油"]').click();
+    _pan.querySelectorAll('.emoji-cell')[0].click();
+    _pan.querySelector('.emoji-tab[data-cat="学习"]').click();
+    _pan.querySelectorAll('.emoji-cell')[0].click();
+    var _onNow = _pan.querySelector('.emoji-tab.on').getAttribute('data-cat');
+    if (!_keep) _btn.click();                       /* 再点收起 */
+    document.body.setAttribute('data-emoji-test',
+      'tabs=' + _tabs.length + ';cells=' + _c0 + ';total=' + EMOJI.total() +
+      ';defCat=' + _on0 + ';nowCat=' + _onNow +
+      ';open=' + _open + ';closed=' + _pan.hidden +
+      ';val=' + _imp.value + ';caret=' + _imp.selectionStart);
+    var _g = _pan.querySelector('.emoji-grid');
+    document.body.setAttribute('data-emoji-grid',
+      'panel=' + _pan.offsetWidth + 'x' + _pan.offsetHeight +
+      ' grid=' + _g.offsetWidth + 'x' + _g.offsetHeight +
+      ' scroll=' + _g.scrollWidth + 'x' + _g.scrollHeight +
+      ' cellW=' + Math.round(_g.querySelector('.emoji-cell').getBoundingClientRect().width));
+  } catch (err) {
+    document.body.setAttribute('data-emoji-test', 'ERR:' + (err && err.message));
+  }
+}
+</script>
+
+<div class="q-toast" id="toast" role="status" aria-live="polite"></div>
+</body>
+</html>

@@ -1,0 +1,220 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="light">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#F5F6F8">
+<title>总览 · 学迹管理端</title>
+<link rel="stylesheet" href="style.css?v=20261021c">
+</head>
+<body data-page="dashboard" data-title="总览" data-sub="今天要发的、要审的、要看的，一屏看完">
+
+<div class="app">
+  <aside class="sb" id="sb"></aside>
+  <div class="main">
+    <header class="tb" id="tb"></header>
+    <div class="content">
+
+      <!-- 顶部四张统计卡 -->
+      <section class="sec">
+        <div class="grid g-4" id="stats"></div>
+      </section>
+
+      <div class="split">
+
+        <!-- 左栏 -->
+        <div>
+          <!-- 今日任务 -->
+          <section class="sec">
+            <div class="sec-title">
+              <span id="today-title">今日任务</span>
+              <span class="count" id="today-sub"></span>
+              <span class="right"><a class="btn btn-sm" href="tasks.html">去发布 / 调整</a></span>
+            </div>
+            <div class="card" id="today-card"></div>
+          </section>
+
+          <!-- 近 7 日活跃 -->
+          <section class="sec">
+            <div class="sec-title">近 7 日学习活跃 <span class="count">· 每天做了几件、学了多久</span></div>
+            <div class="card">
+              <div class="spark" id="spark"></div>
+              <div class="grid g-3" style="margin-top:16px">
+                <div><div class="muted" style="font-size:12px">本周总时长</div><div style="font-size:19px;font-weight:600" id="wk-min">—</div></div>
+                <div><div class="muted" style="font-size:12px">任务完成率</div><div style="font-size:19px;font-weight:600" id="wk-rate">—</div></div>
+                <div><div class="muted" style="font-size:12px">连续打卡</div><div style="font-size:19px;font-weight:600" id="wk-streak">—</div></div>
+              </div>
+            </div>
+          </section>
+
+          <!-- 三主科掌握度 -->
+          <section class="sec">
+            <div class="sec-title">科目掌握度 <span class="count">· 首期三主科，其余 P5 接入</span>
+              <span class="right"><a class="btn btn-sm btn-ghost" href="all.html">全科 →</a></span>
+            </div>
+            <div class="card" id="mastery"></div>
+          </section>
+        </div>
+
+        <!-- 右栏 -->
+        <div>
+          <section class="sec">
+            <div class="sec-title">需要你处理的 <span class="count" id="todo-n"></span></div>
+            <div class="card" style="padding:6px 0" id="todo"></div>
+          </section>
+
+          <section class="sec">
+            <div class="sec-title">薄弱知识点 <span class="count">· 按正确率从低到高</span></div>
+            <div class="card" style="padding:6px 0" id="weak"></div>
+          </section>
+
+          <section class="sec">
+            <div class="sec-title">最近动态</div>
+            <div class="card">
+              <div class="timeline" id="logs"></div>
+            </div>
+          </section>
+        </div>
+
+      </div>
+
+    </div>
+  </div>
+</div>
+
+<script src="demo.js?v=20261021c"></script>
+<script src="admin.js?v=20261021c"></script>
+<script>
+(function () {
+  var E = ADMIN.esc, I = ADMIN.icon;
+  var sid = ADMIN.currentId();
+  var stu = ADMIN.currentStudent();
+  var cnt = ADMIN.pending();
+  var tasks = DB.get('tasks', {})[sid] || { items: [], published: false };
+  var items = tasks.items || [];
+  var done = items.filter(function (t) { return t.done; }).length;
+  var pct = items.length ? Math.round(done / items.length * 100) : 0;
+  var act = DB.get('activity', {})[sid] || [];
+  var wkMin = act.reduce(function (n, d) { return n + d.min; }, 0);
+  var wkDone = act.reduce(function (n, d) { return n + d.done; }, 0);
+  var wkTotal = act.reduce(function (n, d) { return n + d.total; }, 0);
+  var essaysWait = DB.get('essays', []).reduce(function (n, t) {
+    return n + (t.subs || []).filter(function (s) { return s.status === '待复核'; }).length;
+  }, 0);
+
+  /* ---------- 统计卡 ---------- */
+  document.getElementById('stats').innerHTML = [
+    '<div class="stat"><div class="stat-top"><span class="ico">' + I('check') + '</span>今日完成度</div>' +
+      '<div class="stat-num">' + pct + '<small>%</small></div>' +
+      '<div class="stat-sub">' + E(stu ? stu.name : '') + ' · ' + done + ' / ' + items.length + ' 件 · ' +
+      (tasks.published ? '已发布' : '<b class="down">未发布</b>') + '</div></div>',
+
+    '<div class="stat"><div class="stat-top"><span class="ico warn">' + I('shield') + '</span>待审题目</div>' +
+      '<div class="stat-num">' + cnt.review + '<small>道</small></div>' +
+      '<div class="stat-sub">AI 低置信转人工 · <a href="review.html" style="color:var(--brand)">去审 →</a></div></div>',
+
+    '<div class="stat"><div class="stat-top"><span class="ico ok">' + I('pen') + '</span>待复核作文</div>' +
+      '<div class="stat-num">' + essaysWait + '<small>篇</small></div>' +
+      '<div class="stat-sub">AI 已评阅，等你确认 · <a href="essays.html" style="color:var(--brand)">去看 →</a></div></div>',
+
+    '<div class="stat"><div class="stat-top"><span class="ico danger">' + I('flag') + '</span>被举报记录</div>' +
+      '<div class="stat-num">' + cnt.report + '<small>条</small></div>' +
+      '<div class="stat-sub">' + (cnt.report ? '达 ' + DB.get('settings', {}).reportDown + ' 次自动下架 · ' : '') +
+      '<a href="posts.html" style="color:var(--brand)">去处理 →</a></div></div>'
+  ].join('');
+
+  /* ---------- 今日任务 ---------- */
+  var KIND_ICO = { practice: 'check', words: 'abc', reading: 'book', essay: 'pen', calc: 'target', wrong: 'refresh' };
+  document.getElementById('today-title').textContent = (stu ? stu.name : '') + ' · 今日任务';
+  document.getElementById('today-sub').textContent = '· ' + tasks.date + ' · 共 ' + items.length + ' 件，已完成 ' + done + ' 件';
+  document.getElementById('today-card').innerHTML = items.length ? items.map(function (t) {
+    return '<div class="row" style="padding:11px 2px">' +
+      '<span class="ico" style="width:30px;height:30px;border-radius:9px;display:grid;place-items:center;' +
+        'background:var(--surface-2);color:var(--text-2);flex:0 0 auto">' + I(KIND_ICO[t.kind] || 'file') + '</span>' +
+      '<div class="row-main"><div class="row-title">' + E(t.title) +
+        '<span class="chip ' + (t.subject === '数学' ? 'brand' : '') + '">' + E(t.subject) + '</span>' +
+        (t.done ? '<span class="chip ok">已完成' + (t.score ? ' ' + t.score + '分' : '') + '</span>'
+                : '<span class="chip warn">待完成</span>') + '</div>' +
+        '<div class="row-meta">' + E(t.kp) + ' · ' + E(t.detail) + '</div></div>' +
+      '<div class="row-act"><span class="muted nowrap" style="font-size:12px">' + t.minutes + ' 分钟</span></div>' +
+    '</div>';
+  }).join('') : '<div class="empty"><div class="ico">' + I('calendar') + '</div>' +
+      '<div class="empty-title">今天还没有发布任务</div>' +
+      '<div class="empty-sub">去「任务发布」选好科目与题量，一键下发到学生端</div>' +
+      '<a class="btn btn-primary" style="margin-top:14px" href="tasks.html">' + I('plus') + '发布今日任务</a></div>';
+
+  /* ---------- 近 7 日活跃 ---------- */
+  var maxMin = Math.max.apply(null, act.map(function (d) { return d.min; }).concat([1]));
+  document.getElementById('spark').innerHTML = act.map(function (d) {
+    return '<div class="spark-col" title="' + d.d + ' · ' + d.min + ' 分钟 · 完成 ' + d.done + '/' + d.total + '">' +
+      '<div class="spark-bar" style="height:100%"><i style="--h:' + Math.round(d.min / maxMin * 100) + '%"></i></div>' +
+      '<div class="spark-lbl">' + d.d.slice(1) + '</div></div>';
+  }).join('') || '<div class="muted">暂无数据</div>';
+  document.getElementById('wk-min').textContent = wkMin + ' 分钟';
+  document.getElementById('wk-rate').textContent = wkTotal ? Math.round(wkDone / wkTotal * 100) + '%' : '—';
+  document.getElementById('wk-streak').textContent = (stu ? stu.streak : 0) + ' 天';
+
+  /* ---------- 掌握度 ---------- */
+  var ms = DB.get('mastery', {})[sid] || [];
+  document.getElementById('mastery').innerHTML = ms.map(function (m) {
+    if (m.soon) {
+      return '<div class="subj-row"><span class="subj-name">' + E(m.subject) + '</span>' +
+        '<div class="subj-bar"><div class="bar"><i style="--w:0%"></i></div></div>' +
+        '<span class="subj-val"><span class="chip">P5 接入</span></span></div>';
+    }
+    var cls = m.v >= 85 ? 'ok' : (m.v >= 70 ? '' : 'warn');
+    var tr = m.trend > 0 ? '<b style="color:var(--ok)">+' + m.trend + '%</b>'
+           : (m.trend < 0 ? '<b style="color:var(--danger)">' + m.trend + '%</b>' : '<span class="muted">持平</span>');
+    return '<div class="subj-row"><span class="subj-name">' + E(m.subject) + '</span>' +
+      '<div class="subj-bar"><div class="bar"><i class="' + cls + '" style="--w:' + m.v + '%"></i></div></div>' +
+      '<span class="subj-val">' + m.v + '% · ' + tr + '</span></div>';
+  }).join('') || '<div class="muted">暂无数据</div>';
+
+  /* ---------- 待办 ---------- */
+  var todos = [];
+  if (!tasks.published && items.length === 0) todos.push({ t: '今天的任务还没发布', s: '学生端会是空的，先发下去', href: 'tasks.html', c: 'warn' });
+  if (cnt.review) todos.push({ t: '有 ' + cnt.review + ' 道题等你过一眼', s: 'AI 预筛置信度低于阈值，已转人工', href: 'review.html', c: 'danger' });
+  if (essaysWait) todos.push({ t: '有 ' + essaysWait + ' 篇作文待复核', s: 'AI 评阅已完成，确认后同步给学生', href: 'essays.html', c: 'brand' });
+  if (cnt.report) todos.push({ t: '有 ' + cnt.report + ' 条记录被举报', s: '看情况隐藏或保留', href: 'posts.html', c: 'danger' });
+  var mkOpen = DB.mkStat(sid).open;
+  if (mkOpen) todos.push({ t: '有 ' + mkOpen + ' 道错题待订正', s: '到复习节点的错题会自动进孩子的「每日任务」', href: 'mistakes.html', c: 'warn' });
+  DB.get('books', []).filter(function (b) { return !b.published; }).length &&
+    todos.push({ t: '书单里还有 ' + DB.get('books', []).filter(function (b) { return !b.published; }).length + ' 本没配题发布', s: '没发布的书只显示在书架，不产生每日阅读任务', href: 'books.html', c: '' });
+  DB.get('students', []).filter(function (s) { return !s.activated && s.status !== 'disabled'; }).length &&
+    todos.push({ t: '有 ' + DB.get('students', []).filter(function (s) { return !s.activated && s.status !== 'disabled'; }).length + ' 名学生还没激活',
+      s: '把账号和初始密码给孩子，登录一次就算激活', href: 'students.html', c: '' });
+  document.getElementById('todo-n').textContent = '· ' + todos.length + ' 项';
+  document.getElementById('todo').innerHTML = todos.length ? todos.map(function (x) {
+    return '<a class="row" href="' + x.href + '" style="padding:12px 14px">' +
+      '<span class="tl-dot" style="padding-top:2px"><i class="' + (x.c || '') + '"></i></span>' +
+      '<div class="row-main"><div class="row-title">' + E(x.t) + '</div><div class="row-meta">' + E(x.s) + '</div></div>' +
+      I('chevR', 'muted') + '</a>';
+  }).join('') : '<div class="empty" style="padding:26px 16px"><div class="empty-title">都处理完了</div>' +
+      '<div class="empty-sub">今天没有需要你操作的事</div></div>';
+
+  /* ---------- 薄弱知识点 ---------- */
+  var weak = DB.get('weak', {})[sid] || [];
+  document.getElementById('weak').innerHTML = weak.length ? weak.map(function (w) {
+    var cls = w.rate < 0.6 ? 'danger' : (w.rate < 0.75 ? 'warn' : 'ok');
+    return '<div class="row" style="padding:11px 14px">' +
+      '<div class="row-main"><div class="row-title">' + E(w.kp) + '</div>' +
+      '<div class="row-meta">做过 ' + w.n + ' 题 · ' + E(w.subject) + '</div></div>' +
+      '<div class="conf" style="min-width:104px"><div class="bar"><i class="' + cls + '" style="--w:' +
+        Math.round(w.rate * 100) + '%"></i></div><span class="conf-val">' + Math.round(w.rate * 100) + '%</span></div>' +
+    '</div>';
+  }).join('') : '<div class="empty" style="padding:26px 16px"><div class="empty-title">还没有足够数据</div>' +
+      '<div class="empty-sub">做上几套题就能看到薄弱点了</div></div>';
+
+  /* ---------- 最近动态 ---------- */
+  var logs = DB.get('logs', []).slice(0, 6);
+  document.getElementById('logs').innerHTML = logs.map(function (l, i) {
+    var cls = l.act === '退回' ? 'danger' : (l.act === '自动通过' ? 'ok' : 'brand');
+    return '<div class="tl-item"><div class="tl-dot"><i class="' + cls + '"></i>' +
+      (i < logs.length - 1 ? '<div class="tl-line"></div>' : '') + '</div>' +
+      '<div class="tl-body"><div class="tl-title">' + E(l.who) + ' ' + E(l.act) + ' <code>' + E(l.target) + '</code></div>' +
+      '<div class="tl-meta">' + E(l.note) + ' · ' + ADMIN.ago(l.at) + '</div></div></div>';
+  }).join('') || '<div class="muted">暂无记录</div>';
+})();
+</script>
+</body>
+</html>

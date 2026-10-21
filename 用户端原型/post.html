@@ -1,0 +1,1302 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="light">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#F5F6F8">
+<title>发布记录 · 学迹</title>
+<script>document.documentElement.classList.add('js-on');</script>
+<link rel="stylesheet" href="style.css?v=20261021a">
+
+<!-- Quill 2 富文本：国内 CDN 优先，失败自动降级到 jsdelivr -->
+<link rel="stylesheet" href="https://cdn.bootcdn.net/ajax/libs/quill/2.0.3/quill.snow.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/quill@2.0.3/dist/quill.snow.css" crossorigin="anonymous" referrerpolicy="no-referrer">
+</head>
+<body data-page="post">
+
+<div class="app">
+<main class="main">
+
+  <header class="topbar" id="topbar"></header>
+
+  <div class="content content-wide">
+
+    <div class="post-grid">
+
+      <!-- ============ 左：编辑器 ============ -->
+      <section class="section reveal" style="margin-top:18px">
+        <div class="editor-card">
+          <input class="editor-title" id="post-title" type="text"
+                 placeholder="给这条记录起个标题（可不填）" maxlength="60">
+          <div id="editor"></div>
+          <textarea class="editor-fallback" id="editor-fallback" hidden
+                    placeholder="编辑器组件加载失败（可能离线），先用简单文本框记录……"></textarea>
+          <div class="editor-foot">
+            <span class="md-tip"># 标题 · - 列表 · &gt; 引用 · ``` 代码 · --- 分割线</span>
+            <span class="editor-tools">
+              <button class="ef-btn" type="button" id="btn-kbd" title="常用快捷键">
+                <span class="ef-k">⌘</span> 快捷键
+              </button>
+              <button class="ef-btn" type="button" id="btn-focus" title="专注模式（Esc 退出）">⤢ 专注</button>
+            </span>
+            <span class="editor-wc"><b id="wc">0</b> 字 · 图 <b id="imgwc">0</b>/9</span>
+          </div>
+        </div>
+
+        <!-- 快捷键面板（底部「快捷键」按钮打开） -->
+        <div class="kbd-pop" id="kbd-pop" hidden>
+          <p class="kbd-title">编辑快捷键</p>
+          <ul class="kbd-list">
+            <li><span>加粗 / 斜体 / 下划线</span><em><kbd>Ctrl</kbd>+<kbd>B</kbd> <kbd>I</kbd> <kbd>U</kbd></em></li>
+            <li><span>撤销 / 重做</span><em><kbd>Ctrl</kbd>+<kbd>Z</kbd> / <kbd>Ctrl</kbd>+<kbd>Y</kbd></em></li>
+            <li><span>行内代码</span><em><kbd>Ctrl</kbd>+<kbd>E</kbd></em></li>
+            <li><span>有序 / 无序列表</span><em><kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>7</kbd> / <kbd>8</kbd></em></li>
+            <li><span>粘贴为纯文本</span><em><kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>V</kbd></em></li>
+            <li><span>换行不换段</span><em><kbd>Shift</kbd>+<kbd>Enter</kbd></em></li>
+            <li><span>插入图片</span><em>直接粘贴 / 拖入 / 工具栏</em></li>
+          </ul>
+        </div>
+
+        <!-- 图片大图预览（点正文里的图片打开） -->
+        <div class="img-viewer" id="img-viewer" hidden>
+          <div class="iv-bar">
+            <span class="iv-idx" id="iv-idx"></span>
+            <span class="iv-acts">
+              <button class="iv-btn" type="button" id="iv-del">删除这张</button>
+              <button class="iv-btn" type="button" id="iv-close">关闭</button>
+            </span>
+          </div>
+          <img id="iv-img" alt="图片预览">
+        </div>
+
+        <!-- 选中文字浮出的气泡条（飞书式） -->
+        <div class="bubble-bar" id="bubble" hidden>
+          <button type="button" data-f="bold" title="加粗 Ctrl+B"><b>B</b></button>
+          <button type="button" data-f="italic" title="斜体 Ctrl+I"><i>I</i></button>
+          <button type="button" data-f="underline" title="下划线 Ctrl+U"><u>U</u></button>
+          <button type="button" data-f="strike" title="删除线"><s>S</s></button>
+          <span class="bubble-sep"></span>
+          <button type="button" data-f="palette" id="bubble-color" title="文字颜色 / 底色高亮">
+            <span class="a-mark" id="bubble-color-mark">A</span>
+          </button>
+          <button type="button" data-f="link" title="链接">🔗</button>
+          <button type="button" data-f="clean" title="清除格式">⌫</button>
+        </div>
+
+        <!-- 颜色 / 底色面板（气泡条上的 A 打开） -->
+        <div class="palette" id="palette" hidden>
+          <p class="pal-label">文字颜色</p>
+          <div class="pal-row" data-kind="color">
+            <button type="button" data-v="#E5484D" style="--c:#E5484D" title="红"></button>
+            <button type="button" data-v="#E8890C" style="--c:#E8890C" title="橙"></button>
+            <button type="button" data-v="#0F9D58" style="--c:#0F9D58" title="绿"></button>
+            <button type="button" data-v="#3E63DD" style="--c:#3E63DD" title="蓝"></button>
+            <button type="button" data-v="#8E4EC6" style="--c:#8E4EC6" title="紫"></button>
+            <button type="button" data-v="#5B6472" style="--c:#5B6472" title="灰"></button>
+            <button type="button" class="pal-clear" data-v="false" title="恢复默认颜色">✕</button>
+          </div>
+          <p class="pal-label">底色高亮</p>
+          <div class="pal-row" data-kind="background">
+            <button type="button" data-v="#FFF3B0" style="--c:#FFF3B0" title="黄"></button>
+            <button type="button" data-v="#D8F5E4" style="--c:#D8F5E4" title="绿"></button>
+            <button type="button" data-v="#DCE7FF" style="--c:#DCE7FF" title="蓝"></button>
+            <button type="button" data-v="#FFE1EA" style="--c:#FFE1EA" title="粉"></button>
+            <button type="button" data-v="#EDE4FF" style="--c:#EDE4FF" title="紫"></button>
+            <button type="button" data-v="#EEF1F5" style="--c:#EEF1F5" title="灰"></button>
+            <button type="button" class="pal-clear" data-v="false" title="去掉底色">✕</button>
+          </div>
+        </div>
+      </section>
+
+      <!-- ============ 右：发布设置 ============ -->
+      <aside style="display:flex;flex-direction:column;gap:12px">
+
+        <div class="side-card reveal">
+          <p class="side-title">记录类型</p>
+          <div class="tag-opts" id="tag-opts">
+            <button class="tag-opt active" type="button" data-tag="图文记录">图文记录</button>
+            <button class="tag-opt" type="button" data-tag="学习笔记">学习笔记</button>
+            <button class="tag-opt" type="button" data-tag="随感">随感</button>
+          </div>
+        </div>
+
+        <div class="side-card reveal">
+          <p class="side-title">卡片图片 <span class="cover-count" id="cover-count"></span></p>
+          <p class="row-meta cover-lead" id="cover-lead">
+            勾选要放进卡片的图（1–9 张），没勾的只留在正文里。
+          </p>
+          <div class="cover-grid" id="cover-grid"></div>
+          <button class="cover-add" type="button" id="cover-add">＋ 添加图片</button>
+          <p class="cover-note" id="cover-note" hidden></p>
+        </div>
+
+        <div class="side-card reveal">
+          <p class="side-title">谁可以看</p>
+          <div class="tag-opts" id="vis-opts">
+            <button class="tag-opt active" type="button" data-vis="仅自己">仅自己</button>
+            <button class="tag-opt" type="button" data-vis="家人可见">家人可见</button>
+            <button class="tag-opt" type="button" data-vis="公开">公开</button>
+          </div>
+          <p class="row-meta" style="margin-top:12px">
+            默认仅自己可见；改成「家人可见」后，家长端能看到这条记录。
+          </p>
+        </div>
+
+        <div class="reveal">
+          <div class="auth-error" id="post-error" hidden style="margin:0 0 12px">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"
+                 stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <circle cx="12" cy="12" r="8.6"/><path d="M12 8v4.4"/><path d="M12 15.8h.01"/>
+            </svg>
+            <span id="post-error-text">内容不能为空</span>
+          </div>
+          <button class="btn-brand full" type="button" id="publish-btn" style="width:100%">发布到首页</button>
+          <button class="btn-ghost full" type="button" id="draft-btn" style="margin-top:10px">存草稿</button>
+          <p class="row-meta" id="autosave-tip" style="margin-top:10px;text-align:center">
+            每 2 秒自动存一次草稿，关页不丢
+          </p>
+        </div>
+
+      </aside>
+
+    </div>
+
+  </div>
+</main>
+</div>
+
+<script src="https://cdn.bootcdn.net/ajax/libs/quill/2.0.3/quill.min.js"></script>
+<script>window.Quill || document.write('<script src="https://cdn.jsdelivr.net/npm/quill@2.0.3/dist/quill.min.js"><\/script>')</script>
+<script>window.Quill || document.write('<script src="https://unpkg.com/quill@2.0.3/dist/quill.min.js"><\/script>')</script>
+
+<script src="fx.js?v=20261021a"></script>
+<script src="app.js?v=20261021a"></script>
+<script>
+/* ============================================================
+   发布记录页
+   · 编辑器：Quill 2（极简工具条 + 选中气泡条 + Markdown 快捷输入）
+   · 卡片图片：勾选正文里的图（1–9 张）决定首页卡片展示哪几张
+   · 发布数据：imgs = 勾选的图（顺序即正文顺序），cover = imgs[0]
+   ============================================================ */
+var quill = null;
+var MAX_IMG = 9;
+var bubble = document.getElementById('bubble');   /* 必须在 initEditor 之前取：var 提升会拿到 undefined */
+var palette = document.getElementById('palette'); /* 颜色/底色面板（同上，取节点要早于使用它的 init） */
+
+/* ---------- 初始化编辑器 ---------- */
+(function initEditor() {
+  var host = document.getElementById('editor');
+  var fallback = document.getElementById('editor-fallback');
+
+  if (!window.Quill) {                 /* 三条 CDN 都失败：降级为纯文本框 */
+    host.style.display = 'none';
+    fallback.hidden = false;
+    document.getElementById('cover-lead').textContent = '降级文本框模式下暂不支持卡片图片。';
+    document.getElementById('cover-add').hidden = true;
+    return;
+  }
+
+  /* 颜色 / 底色改成内联样式记录（Quill 默认按 class 记，颜色一多就得逐个补 CSS） */
+  try {
+    var C = Quill.import('attributors/style/color');
+    var B = Quill.import('attributors/style/background');
+    if (C) Quill.register(C, true);
+    if (B) Quill.register(B, true);
+  } catch (e) { /* 取不到就退回默认实现，不影响其他格式 */ }
+
+  /* 分割线：Quill 没有内置，用 BlockEmbed 造一个 <hr> */
+  try {
+    var BlockEmbed = Quill.import('blots/block/embed');
+    var DividerBlot = class extends BlockEmbed {};
+    DividerBlot.blotName = 'divider';
+    DividerBlot.tagName  = 'hr';
+    DividerBlot.className = 'ql-divider';
+    DividerBlot.create = function () { return document.createElement('hr'); };
+    Quill.register(DividerBlot, true);
+  } catch (e) { /* 注册失败只是少一个按钮 */ }
+
+  quill = new Quill('#editor', {
+    theme: 'snow',
+    placeholder: '记下今天的想法、感受…… 可以直接粘贴或拖入截图。',
+    modules: {
+      toolbar: {
+        container: [
+          ['bold', 'italic', 'underline', 'strike', 'code'],
+          [{ script: 'sub' }, { script: 'super' }],
+          [{ size: ['small', false, 'large', 'huge'] }],
+          [{ header: [1, 2, 3, false] }],
+          [{ color: [] }, { background: [] }],
+          [{ list: 'ordered' }, { list: 'bullet' }, { list: 'checked' }],
+          [{ indent: '-1' }, { indent: '+1' }],
+          [{ align: [] }],
+          ['blockquote', 'code-block', 'divider'],
+          ['image', 'link'],
+          ['undo', 'redo'],
+          ['clean']
+        ],
+        handlers: {
+          image:   function () { pickFiles(); },
+          divider: function () { insertDivider(); },
+          undo:    function () { if (quill) quill.history.undo(); },
+          redo:    function () { if (quill) quill.history.redo(); }
+        }
+      }
+    }
+  });
+
+  localizeToolbar();
+  decorateToolbar();
+  initMarkdown();
+  initBubble();
+  initPasteDrop();
+  initWordCount();
+  initImageViewer();
+  initEditorExtras();
+})();
+
+/* ============================================================
+   工具条：中文提示 + 自定义按钮图标
+   ============================================================ */
+function localizeToolbar() {
+  if (!quill) return;
+  var tb = quill.getModule('toolbar');
+  var box = tb && tb.container;
+  if (!box) return;
+  var TIPS = {
+    'ql-bold': '加粗 Ctrl+B', 'ql-italic': '斜体 Ctrl+I', 'ql-underline': '下划线 Ctrl+U',
+    'ql-strike': '删除线', 'ql-code': '行内代码 Ctrl+E',
+    'ql-size': '字号', 'ql-header': '标题级别',
+    'ql-color': '文字颜色', 'ql-background': '底色高亮',
+    'ql-list': '列表', 'ql-indent': '缩进', 'ql-align': '对齐方式',
+    'ql-blockquote': '引用', 'ql-code-block': '代码块', 'ql-divider': '插入分割线',
+    'ql-image': '插入图片', 'ql-link': '插入链接',
+    'ql-undo': '撤销 Ctrl+Z', 'ql-redo': '重做 Ctrl+Y', 'ql-clean': '清除格式'
+  };
+  Object.keys(TIPS).forEach(function (k) {
+    var els = box.querySelectorAll('.' + k);
+    for (var i = 0; i < els.length; i++) els[i].setAttribute('title', TIPS[k]);
+  });
+  /* 上标 / 下标两个按钮共用 ql-script */
+  var subs = box.querySelectorAll('.ql-script');
+  for (var j = 0; j < subs.length; j++) {
+    subs[j].setAttribute('title', subs[j].value === 'super' ? '上标' : '下标');
+  }
+}
+
+/* Quill 只给内置格式画图标，自定义按钮要自己补 SVG（class 沿用主题的 ql-stroke/ql-fill） */
+function decorateToolbar() {
+  if (!quill) return;
+  var tb = quill.getModule('toolbar');
+  var box = tb && tb.container;
+  if (!box) return;
+  var ICONS = {
+    divider: '<svg viewBox="0 0 18 18"><line class="ql-stroke" x1="2" y1="9" x2="16" y2="9"/>' +
+             '<circle class="ql-fill" cx="9" cy="3.4" r="1.1"/><circle class="ql-fill" cx="9" cy="14.6" r="1.1"/></svg>',
+    undo: '<svg viewBox="0 0 18 18"><polyline class="ql-stroke" points="6.5,5 2.5,9 6.5,13"/>' +
+          '<path class="ql-stroke" d="M2.5 9h7.5a4.6 4.6 0 0 1 0 9.2H8"/></svg>',
+    redo: '<svg viewBox="0 0 18 18"><polyline class="ql-stroke" points="11.5,5 15.5,9 11.5,13"/>' +
+          '<path class="ql-stroke" d="M15.5 9H8a4.6 4.6 0 0 0 0 9.2h2"/></svg>'
+  };
+  Object.keys(ICONS).forEach(function (k) {
+    var b = box.querySelector('.ql-' + k);
+    if (b && !b.querySelector('svg')) b.innerHTML = ICONS[k];
+  });
+}
+
+/* 插入分割线（BlockEmbed <hr>） */
+function insertDivider() {
+  if (!quill) return;
+  var sel = quill.getSelection(true);
+  var at = sel ? sel.index : quill.getLength() - 1;
+  if (sel && sel.length) quill.deleteText(sel.index, sel.length, 'user');
+  quill.insertEmbed(at, 'divider', true, 'user');
+  quill.setSelection(at + 1, 0, 'user');
+  refreshCardImgs();
+}
+
+/* ============================================================
+   图片大图预览：点正文里的图 → 全屏看大图，可顺手删掉
+   ============================================================ */
+function initImageViewer() {
+  var box = document.getElementById('img-viewer');
+  var pic = document.getElementById('iv-img');
+  var idxEl = document.getElementById('iv-idx');
+  var delBtn = document.getElementById('iv-del');
+  var closeBtn = document.getElementById('iv-close');
+  if (!quill || !box || !pic) return;
+  var cur = null;
+
+  function label(node) {
+    var list = editorImgs();
+    var i = list.indexOf(node);
+    return i < 0 ? '' : '第 ' + (i + 1) + ' / ' + list.length + ' 张';
+  }
+  function open(node) {
+    cur = node;
+    pic.src = node.getAttribute('src') || '';
+    if (idxEl) idxEl.textContent = label(node);
+    box.hidden = false;
+    document.body.classList.add('no-scroll');
+  }
+  function close() {
+    box.hidden = true;
+    cur = null;
+    pic.removeAttribute('src');
+    document.body.classList.remove('no-scroll');
+  }
+
+  /* 捕获阶段拦下：别让 Quill 顺手把光标点到图后面 */
+  quill.root.addEventListener('click', function (e) {
+    var t = e.target;
+    if (!t || t.tagName !== 'IMG') return;
+    e.preventDefault();
+    e.stopPropagation();
+    open(t);
+  }, true);
+
+  if (closeBtn) closeBtn.addEventListener('click', close);
+  box.addEventListener('click', function (e) {
+    if (e.target === box) close();            /* 点遮罩关闭 */
+  });
+  document.addEventListener('keydown', function (e) {
+    if (!box.hidden && e.key === 'Escape') close();
+  });
+
+  if (delBtn) {
+    delBtn.addEventListener('click', function () {
+      var node = cur;
+      close();
+      if (!node) return;
+      var blot = window.Quill && Quill.find ? Quill.find(node) : null;
+      if (!blot) return;
+      var idx = quill.getIndex(blot);
+      if (idx == null || idx < 0) return;
+      quill.deleteText(idx, 1, 'user');
+      refreshCardImgs();
+      scheduleDraft();
+    });
+  }
+}
+
+/* ============================================================
+   编辑器附加：专注模式 / 快捷键面板 / 粘贴纯文本
+   ============================================================ */
+function initEditorExtras() {
+  var fBtn = document.getElementById('btn-focus');
+  var kBtn = document.getElementById('btn-kbd');
+  var pop  = document.getElementById('kbd-pop');
+
+  /* 工具条吸顶要避开顶栏（顶栏在手机上会折行，量一次 + 变化时更新） */
+  function syncTopbarH() {
+    var tb = document.querySelector('.topbar');
+    var h = tb ? Math.round(tb.getBoundingClientRect().height) : 0;
+    document.documentElement.style.setProperty('--tb-h', h + 'px');
+  }
+  syncTopbarH();
+  window.addEventListener('resize', syncTopbarH);
+  window.addEventListener('load', syncTopbarH);
+
+  if (fBtn) {
+    fBtn.addEventListener('click', function () {
+      var on = document.body.classList.toggle('focus-mode');
+      fBtn.classList.toggle('on', on);
+      fBtn.textContent = on ? '⤢ 退出专注' : '⤢ 专注';
+      if (on && quill) quill.focus();
+    });
+  }
+
+  function placePop() {
+    if (!pop || !kBtn) return;
+    var r = kBtn.getBoundingClientRect();
+    pop.hidden = false;
+    var pw = pop.offsetWidth || 260, ph = pop.offsetHeight || 200;
+    var left = Math.max(8, Math.min(window.innerWidth - pw - 8, r.right - pw));
+    var top = r.top - ph - 8;
+    if (top < 8) top = r.bottom + 8;
+    pop.style.left = Math.round(left) + 'px';
+    pop.style.top = Math.round(top) + 'px';
+  }
+  if (kBtn && pop) {
+    kBtn.addEventListener('click', function (e) {
+      e.stopPropagation();
+      if (pop.hidden) placePop(); else pop.hidden = true;
+    });
+    document.addEventListener('click', function (e) {
+      if (pop.hidden) return;
+      if (pop.contains(e.target) || kBtn.contains(e.target)) return;
+      pop.hidden = true;
+    });
+  }
+
+  /* 专注模式 / 面板都支持 Esc 退出 */
+  document.addEventListener('keydown', function (e) {
+    if (e.key !== 'Escape') return;
+    if (pop && !pop.hidden) pop.hidden = true;
+    if (document.body.classList.contains('focus-mode')) {
+      document.body.classList.remove('focus-mode');
+      if (fBtn) { fBtn.classList.remove('on'); fBtn.textContent = '⤢ 专注'; }
+    }
+  });
+}
+
+/* ============================================================
+   图片：选图 / 粘贴 / 拖入 → 压缩 → 插入正文末尾
+   ============================================================ */
+function pickFiles() {
+  var input = document.createElement('input');
+  input.type = 'file';
+  input.accept = 'image/*';
+  input.multiple = true;
+  input.onchange = function () { addFiles(input.files); };
+  input.click();
+}
+
+function imgCountInEditor() {
+  return quill ? quill.root.querySelectorAll('img').length : 0;
+}
+
+/* 长边压到 1600px / JPEG 0.82：三张手机原图直接 base64 就会撑爆 localStorage */
+function compressFile(file, cb) {
+  if (file.size < 260 * 1024) {          /* 小图不动，省得二次损失 */
+    var fr0 = new FileReader();
+    fr0.onload = function () { cb(fr0.result); };
+    fr0.readAsDataURL(file);
+    return;
+  }
+  var url = URL.createObjectURL(file);
+  var im = new Image();
+  im.onload = function () {
+    var max = 1600;
+    var sc = Math.min(1, max / Math.max(im.naturalWidth, im.naturalHeight));
+    var w = Math.round(im.naturalWidth * sc), h = Math.round(im.naturalHeight * sc);
+    var cv = document.createElement('canvas');
+    cv.width = w; cv.height = h;
+    var g = cv.getContext('2d');
+    g.fillStyle = '#fff'; g.fillRect(0, 0, w, h);
+    g.drawImage(im, 0, 0, w, h);
+    URL.revokeObjectURL(url);
+    cb(cv.toDataURL('image/jpeg', 0.82));
+  };
+  im.onerror = function () { URL.revokeObjectURL(url); cb(null); };
+  im.src = url;
+}
+
+/* 统一入口：任何来源的图片都走这里，9 张上限在插入前就截断 */
+function addFiles(files) {
+  if (!quill || !files || !files.length) return;
+  var list = Array.prototype.filter.call(files, function (f) {
+    return f && f.type && f.type.indexOf('image') === 0;
+  });
+  if (!list.length) return;
+
+  var room = MAX_IMG - imgCountInEditor();
+  if (room <= 0) { showError('正文最多 ' + MAX_IMG + ' 张图 —— 和朋友圈一样'); return; }
+  if (list.length > room) {
+    list = list.slice(0, room);
+    showError('正文最多 ' + MAX_IMG + ' 张图，已插入前 ' + room + ' 张');
+  }
+
+  /* 逐张压缩后按顺序插入到末尾（不打断用户当前选择） */
+  var i = 0;
+  (function next() {
+    if (i >= list.length) { refreshCardImgs(); return; }
+    compressFile(list[i++], function (data) {
+      if (data) {
+        var at = quill.getLength ? quill.getLength() - 1 : quill.root.textContent.length;
+        quill.insertEmbed(at, 'image', data, 'user');
+        quill.setSelection(at + 1, 0, 'silent');
+      }
+      next();
+    });
+  })();
+}
+
+/* 从 DataTransfer 里挑出图片文件（items 优先，files 兜底） */
+function imgFilesOf(dt) {
+  var out = [];
+  if (!dt) return out;
+  if (dt.items) {
+    for (var i = 0; i < dt.items.length; i++) {
+      var it = dt.items[i];
+      if (it.kind === 'file' && it.type && it.type.indexOf('image') === 0) {
+        var f = it.getAsFile();
+        if (f) out.push(f);
+      }
+    }
+  }
+  if (!out.length && dt.files) {
+    for (var j = 0; j < dt.files.length; j++) {
+      if (dt.files[j].type && dt.files[j].type.indexOf('image') === 0) out.push(dt.files[j]);
+    }
+  }
+  return out;
+}
+
+/* 粘贴 / 拖入图片：和按钮走同一条路，不再各写一套判断
+   ⚠️ 必须挂在 document 的捕获阶段：Quill 自己的剪贴板上传也监听 paste，
+   且在编辑器 root 上以 capture 注册（比 root 上的冒泡监听更早）。
+   只在 root 上拦 → Quill 先插一张原图、我们再插一张压缩图 = 一张图变两张。
+   捕获阶段抢在最前 + stopPropagation，Quill 就收不到这次粘贴。 */
+function initPasteDrop() {
+  if (!quill) return;
+  function inEditor(t) { return !!(t && quill.root.contains(t)); }
+
+  /* Ctrl/⌘+Shift+V = 粘成纯文本（从网页复制的花格式不带进来） */
+  var wantPlain = false;
+  document.addEventListener('keydown', function (e) {
+    wantPlain = !!(e.shiftKey && (e.ctrlKey || e.metaKey) && (e.key === 'v' || e.key === 'V'));
+  }, true);
+  document.addEventListener('keyup', function () { wantPlain = false; }, true);
+
+  document.addEventListener('paste', function (e) {
+    if (!inEditor(e.target)) return;
+    var files = imgFilesOf(e.clipboardData);
+    if (!files.length) {
+      if (wantPlain && e.clipboardData) {
+        var txt = e.clipboardData.getData('text/plain');
+        wantPlain = false;
+        if (txt) {
+          e.preventDefault();
+          e.stopPropagation();
+          var sel = quill.getSelection(true);
+          var at = sel ? sel.index : quill.getLength() - 1;
+          if (sel && sel.length) quill.deleteText(sel.index, sel.length, 'user');
+          quill.insertText(at, txt, 'user');
+          quill.setSelection(at + txt.length, 0, 'user');
+        }
+      }
+      return;                            /* 普通文字粘贴交给 Quill 处理 */
+    }
+    e.preventDefault();
+    e.stopPropagation();
+    addFiles(files);
+  }, true);
+
+  document.addEventListener('drop', function (e) {
+    if (!inEditor(e.target)) return;
+    var files = imgFilesOf(e.dataTransfer);
+    if (!files.length) return;
+    e.preventDefault();
+    e.stopPropagation();
+    addFiles(files);
+  }, true);
+}
+
+/* ============================================================
+   卡片图片：正文里的每张图一个开关，勾了几张首页就显示几张
+   ============================================================ */
+var cardItems = [];        /* [{pid, src, on}] 顺序 = 正文出现顺序；pid 标识"这一张"，同图两份互不影响 */
+var coverGrid  = document.getElementById('cover-grid');
+var coverCount = document.getElementById('cover-count');
+var coverNote  = document.getElementById('cover-note');
+var coverAdd   = document.getElementById('cover-add');
+
+/* 给每个 <img> 元素发一个稳定编号：同一张图插两次得到两个不同 pid，
+   勾选状态才能各管各的（之前按 src 记，同图两份就必然联动） */
+var pidSeq = 0;
+function pidOf(im) {
+  if (!im.__pid) im.__pid = ++pidSeq;
+  return im.__pid;
+}
+
+function editorImgs() {
+  if (!quill) return [];
+  return Array.prototype.filter.call(quill.root.querySelectorAll('img'), function (im) {
+    return !!im.getAttribute('src');
+  });
+}
+
+/* 签名 = 每个元素的 pid + 勾选态。没变就不重建 DOM（base64 大图重建很贵） */
+function cardSig(imgs) {
+  var a = imgs.map(function (im) { return pidOf(im); }).join(',');
+  var b = cardItems.map(function (it) { return it.on ? 1 : 0; }).join('');
+  return a + '|' + b;
+}
+var lastSig = '';
+
+function refreshCardImgs() {
+  if (!coverGrid) return;
+  var imgs = editorImgs();
+  var sig = cardSig(imgs);
+  if (sig === lastSig) return;
+  lastSig = sig;
+
+  /* 一对一继承旧状态：先按 pid 认同一个元素，pid 认不到（Quill 重建过 DOM）
+     再按 src 找一张没被用过的旧项兜底；都不是就是新图，默认勾上 */
+  var pool = cardItems.slice();
+  cardItems = imgs.map(function (im) {
+    var src = im.getAttribute('src') || '';
+    var pid = pidOf(im);
+    var k = -1;
+    for (var i = 0; i < pool.length; i++) {
+      if (pool[i].pid === pid) { k = i; break; }
+    }
+    if (k < 0) {
+      for (var j = 0; j < pool.length; j++) {
+        if (pool[j].src === src) { k = j; break; }
+      }
+    }
+    if (k < 0) return { pid: pid, src: src, on: true };
+    return { pid: pid, src: src, on: pool.splice(k, 1)[0].on };
+  });
+
+  var onN = cardItems.filter(function (it) { return it.on; }).length;
+  coverCount.textContent = cardItems.length
+    ? '· 已选 ' + onN + ' / 共 ' + cardItems.length + ' 张'
+    : '';
+
+  coverAdd.hidden = cardItems.length >= MAX_IMG;
+  coverNote.hidden = !(cardItems.length && !onN);
+  if (!coverNote.hidden) {
+    coverNote.textContent = '一张都没勾：卡片只显示文字；正文里的图仍然保存着，不会被删。';
+  }
+
+  coverGrid.innerHTML = cardItems.map(function (it, i) {
+    var order = 0;
+    if (it.on) {
+      order = cardItems.slice(0, i + 1).filter(function (x) { return x.on; }).length;
+    }
+    return '<button class="cover-opt' + (it.on ? ' on' : ' off') + '" type="button" data-idx="' + i + '"' +
+      ' aria-pressed="' + (it.on ? 'true' : 'false') + '" title="' + (it.on ? '点一下：不放进卡片' : '点一下：放进卡片') + '">' +
+      '<img src="' + it.src + '" alt="">' +
+      '<span class="ck">' + (it.on ? order : '') + '</span>' +
+      (order === 1 ? '<i>首图</i>' : '') +
+      '</button>';
+  }).join('');
+}
+
+if (coverGrid) {
+  coverGrid.addEventListener('click', function (e) {
+    var b = e.target.closest('.cover-opt');
+    if (!b) return;
+    var it = cardItems[+b.dataset.idx];
+    if (!it) return;
+    it.on = !it.on;
+    refreshCardImgs();
+    scheduleDraft();
+  });
+  if (coverAdd) coverAdd.addEventListener('click', pickFiles);
+  if (quill) quill.on('text-change', function () { refreshCardImgs(); });
+}
+
+/* ============================================================
+   Markdown 快捷输入（飞书式）：在行首敲这些符号就变成格式
+   ============================================================ */
+var MD_RULES = [
+  ['- [ ] ', { list: 'checked' }],
+  ['[ ] ',   { list: 'checked' }],
+  ['### ',   { header: 3 }],
+  ['## ',    { header: 2 }],
+  ['# ',     { header: 1 }],
+  ['1. ',    { list: 'ordered' }],
+  ['---',    { divider: true }],
+  ['- ',     { list: 'bullet' }],
+  ['* ',     { list: 'bullet' }],
+  ['> ',     { blockquote: true }],
+  ['```',    { 'code-block': true }]
+];
+
+/* 从 delta 反推本次输入结束的位置：不依赖 getSelection（失焦/输入法时它可能是 null） */
+function cursorFromDelta(delta) {
+  if (!delta || !delta.ops) return null;
+  var pos = 0;
+  for (var i = 0; i < delta.ops.length; i++) {
+    var op = delta.ops[i];
+    if (typeof op.retain === 'number') pos += op.retain;
+    else if (typeof op.insert === 'string') pos += op.insert.length;
+    else if (op.insert) pos += 1;
+  }
+  return pos;
+}
+
+function mdConvert(delta) {
+  if (!quill) return;
+  var sel = quill.getSelection();
+  /* 优先用 delta 推出来的光标位置：它等于「本次改动结束处」，比失焦时的 selection 可靠 */
+  var idx = cursorFromDelta(delta);
+  if (idx == null) idx = (sel && !sel.length) ? sel.index : null;
+  if (idx == null) return;
+  var line = quill.getLine(idx)[0];
+  if (!line) return;
+  var start = line.offset();
+  if (idx <= start) return;
+  var before = quill.getText(start, idx - start);
+
+  for (var i = 0; i < MD_RULES.length; i++) {
+    var p = MD_RULES[i][0];
+    if (before !== p) continue;
+    var fmt = MD_RULES[i][1];
+    quill.deleteText(start, p.length, 'user');
+    if (fmt.divider) {                       /* 分割线是 block embed，不能走 formatLine */
+      quill.insertEmbed(start, 'divider', true, 'user');
+      quill.setSelection(start + 1, 0, 'silent');
+      return;
+    }
+    quill.formatLine(start, 1, fmt, 'user');
+    return;
+  }
+}
+
+function initMarkdown() {
+  if (!quill) return;
+  quill.on('text-change', function (d, o, src) {
+    if (src === 'user') mdConvert(d);
+  });
+}
+
+/* ============================================================
+   选中气泡条：选中文字后在选区上方浮出
+   ============================================================ */
+function initBubble() {
+  if (!quill || !bubble) return;
+  var colorBtn = document.getElementById('bubble-color');
+  var colorMark = document.getElementById('bubble-color-mark');
+  var bubbleSel = null;             /* 记住选区：点面板时浏览器可能已经把选区收掉 */
+
+  function place(range) {
+    var sel = range || quill.getSelection();
+    if (!sel || !sel.length) { bubble.hidden = true; closePalette(); return; }
+    bubbleSel = sel;
+    var b = quill.getBounds(sel.index, sel.length);
+    if (!b) { bubble.hidden = true; return; }
+    var host = quill.container.getBoundingClientRect();
+    var top = host.top + b.top - 44;
+    var left = host.left + b.left + b.width / 2;
+    bubble.hidden = false;
+    var bw = bubble.offsetWidth || 210;
+    left = Math.max(8, Math.min(window.innerWidth - bw - 8, left - bw / 2));
+    top = Math.max(8, top);
+    bubble.style.left = Math.round(left) + 'px';
+    bubble.style.top = Math.round(top) + 'px';
+    syncBubbleState(sel);
+  }
+
+  function syncBubbleState(sel) {
+    var fmt = quill.getFormat(sel.index, sel.length);
+    ['bold', 'italic', 'underline', 'strike'].forEach(function (f) {
+      var btn = bubble.querySelector('[data-f="' + f + '"]');
+      if (btn) btn.classList.toggle('on', !!fmt[f]);
+    });
+    if (colorMark) colorMark.style.setProperty('--c', fmt.color || 'currentColor');
+  }
+
+  /* ---------- 颜色 / 底色面板 ---------- */
+  function openPalette() {
+    if (!palette) return;
+    palette.hidden = false;
+    var br = bubble.getBoundingClientRect();
+    var pw = palette.offsetWidth || 216, ph = palette.offsetHeight || 132;
+    var left = Math.max(8, Math.min(window.innerWidth - pw - 8, br.left));
+    var top = br.bottom + 6;
+    if (top + ph > window.innerHeight - 8) top = Math.max(8, br.top - ph - 6);
+    palette.style.left = Math.round(left) + 'px';
+    palette.style.top = Math.round(top) + 'px';
+    if (colorBtn) colorBtn.classList.add('on');
+  }
+  function closePalette() {
+    if (!palette) return;
+    palette.hidden = true;
+    if (colorBtn) colorBtn.classList.remove('on');
+  }
+
+  if (palette) {
+    palette.addEventListener('mousedown', function (e) { e.preventDefault(); });   /* 别丢选区 */
+    palette.addEventListener('click', function (e) {
+      var sw = e.target.closest('button[data-v]');
+      if (!sw) return;
+      var sel = quill.getSelection() || bubbleSel;
+      if (!sel) return;
+      var kind = sw.parentNode.getAttribute('data-kind');          /* color | background */
+      var v = sw.getAttribute('data-v') === 'false' ? false : sw.getAttribute('data-v');
+      if (!sel.length) {
+        quill.format(kind, v, 'user');            /* 没选中：设成接下来的输入格式 */
+      } else {
+        quill.formatText(sel.index, sel.length, kind, v, 'user');
+        quill.setSelection(sel.index, sel.length, 'silent');
+      }
+      closePalette();
+      place();
+    });
+  }
+  document.addEventListener('click', function (e) {
+    if (!palette || palette.hidden) return;
+    if (palette.contains(e.target) || (colorBtn && colorBtn.contains(e.target))) return;
+    closePalette();
+  });
+  document.addEventListener('keydown', function (e) {
+    if (e.key === 'Escape') closePalette();
+  });
+
+  quill.on('selection-change', function (range) { if (range) place(range); else { bubble.hidden = true; closePalette(); } });
+  quill.on('text-change', function () { if (!bubble.hidden) place(); });
+  function schedulePlace() {
+    setTimeout(function () { var r = quill.getSelection(); if (r && r.length) place(r); }, 0);
+  }
+  quill.root.addEventListener('mouseup', schedulePlace);
+  quill.root.addEventListener('keyup', schedulePlace);
+  quill.root.addEventListener('scroll', function () { bubble.hidden = true; closePalette(); });
+  window.addEventListener('scroll', function () { bubble.hidden = true; closePalette(); }, true);
+  window.addEventListener('resize', function () { bubble.hidden = true; closePalette(); });
+
+  bubble.addEventListener('mousedown', function (e) { e.preventDefault(); });  /* 别丢选区 */
+  bubble.addEventListener('click', function (e) {
+    var b = e.target.closest('button');
+    if (!b || !quill) return;
+    var f = b.dataset.f;
+    if (f === 'palette') {                     /* 只是开面板，不改格式 */
+      if (palette && palette.hidden) openPalette();
+      else closePalette();
+      return;
+    }
+    var sel = quill.getSelection();
+    if (!sel || !sel.length) return;
+    if (f === 'clean') {
+      quill.removeFormat(sel.index, sel.length, 'user');
+    } else if (f === 'link') {
+      var url = prompt('链接地址', 'https://');
+      if (url) quill.formatText(sel.index, sel.length, 'link', url, 'user');
+    } else {
+      var on = !!quill.getFormat(sel.index, sel.length)[f];
+      quill.formatText(sel.index, sel.length, f, !on, 'user');
+    }
+    place();
+  });
+}
+
+/* ============================================================
+   字数
+   ============================================================ */
+function initWordCount() {
+  var wc = document.getElementById('wc');
+  var iw = document.getElementById('imgwc');
+  if (!quill || !wc) return;
+  function upd() {
+    var t = quill.getText().replace(/\s+/g, '');
+    wc.textContent = t.length;
+    if (iw) iw.textContent = imgCountInEditor();
+  }
+  quill.on('text-change', upd);
+  upd();
+}
+
+/* ============================================================
+   类型 / 可见范围
+   ============================================================ */
+document.getElementById('tag-opts').addEventListener('click', function (e) {
+  var b = e.target.closest('.tag-opt');
+  if (!b) return;
+  this.querySelectorAll('.tag-opt').forEach(function (x) { x.classList.remove('active'); });
+  b.classList.add('active');
+  scheduleDraft();
+});
+document.getElementById('vis-opts').addEventListener('click', function (e) {
+  var b = e.target.closest('.tag-opt');
+  if (!b) return;
+  this.querySelectorAll('.tag-opt').forEach(function (x) { x.classList.remove('active'); });
+  b.classList.add('active');
+  scheduleDraft();
+});
+function currentVis() {
+  var b = document.querySelector('#vis-opts .tag-opt.active');
+  return b ? b.dataset.vis : '仅自己';
+}
+function setVis(v) {
+  var b = document.querySelector('#vis-opts .tag-opt[data-vis="' + v + '"]');
+  if (b) b.click();
+}
+function currentTag() {
+  var b = document.querySelector('#tag-opts .tag-opt.active');
+  return b ? b.dataset.tag : '图文记录';
+}
+
+/* ---------- 错误提示 ---------- */
+function showError(msg) {
+  document.getElementById('post-error-text').textContent = msg;
+  document.getElementById('post-error').hidden = false;
+}
+document.getElementById('post-title').addEventListener('input', function () {
+  document.getElementById('post-error').hidden = true;
+  scheduleDraft();
+});
+
+/* ---------- 取内容 ---------- */
+function getContent() {
+  if (quill) {
+    return {
+      html: quill.root.innerHTML,
+      empty: !quill.getText().trim() && !quill.root.querySelector('img')
+    };
+  }
+  var txt = document.getElementById('editor-fallback').value.trim();
+  var esc = txt.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  return {
+    html: esc.split(/\n+/).map(function (p) { return '<p>' + p + '</p>'; }).join(''),
+    empty: !txt
+  };
+}
+
+/* ---------- 草稿：手动 + 自动 ---------- */
+function draftPayload() {
+  var c = getContent();
+  return {
+    title: document.getElementById('post-title').value.trim(),
+    tag: currentTag(),
+    vis: currentVis(),
+    html: c.html,
+    imgs: cardItems.filter(function (it) { return it.on; }).map(function (it) { return it.src; }),
+    at: Date.now()
+  };
+}
+function saveDraft(silent) {
+  try {
+    localStorage.setItem('xj-draft', JSON.stringify(draftPayload()));
+    if (silent) {
+      var t = document.getElementById('autosave-tip');
+      var d = new Date();
+      t.textContent = '草稿已自动保存 ' +
+        ('0' + d.getHours()).slice(-2) + ':' + ('0' + d.getMinutes()).slice(-2);
+    }
+    return true;
+  } catch (e) {
+    showError('图片太多，本地存不下草稿 —— 少放几张再试');
+    return false;
+  }
+}
+var draftTimer = null;
+function scheduleDraft() {
+  clearTimeout(draftTimer);
+  draftTimer = setTimeout(function () {
+    var c = getContent();
+    if (!c.empty || document.getElementById('post-title').value.trim()) saveDraft(true);
+  }, 2000);
+}
+if (quill) {
+  quill.on('text-change', scheduleDraft);
+  setInterval(function () {          /* 兜底：长时间只挂着不动也存一次 */
+    var c = getContent();
+    if (!c.empty || document.getElementById('post-title').value.trim()) saveDraft(true);
+  }, 20000);
+}
+
+document.getElementById('draft-btn').addEventListener('click', function () {
+  var ok = saveDraft(false);
+  this.textContent = ok ? '草稿已存 ✓' : '保存失败';
+  var b = this;
+  setTimeout(function () { b.textContent = '存草稿'; }, 1400);
+});
+
+/* ---------- 恢复草稿 ---------- */
+(function restoreDraft() {
+  try {
+    var d = JSON.parse(localStorage.getItem('xj-draft') || 'null');
+    if (!d) return;
+    document.getElementById('post-title').value = d.title || '';
+    if (quill && d.html) quill.root.innerHTML = d.html;
+    if (!quill && d.html) document.getElementById('editor-fallback').value = d.html.replace(/<[^>]+>/g, '');
+    if (d.tag) {
+      var opt = document.querySelector('#tag-opts .tag-opt[data-tag="' + d.tag + '"]');
+      if (opt) opt.click();
+    }
+    if (d.vis) setVis(d.vis);
+    refreshCardImgs();
+    /* 草稿里记的勾选状态回填（只认还在正文里的图；按 src 计数，同图两份各自还原） */
+    if (Array.isArray(d.imgs)) {
+      var left = {};
+      d.imgs.forEach(function (s) { left[s] = (left[s] || 0) + 1; });
+      cardItems.forEach(function (it) {
+        if (left[it.src] > 0) { it.on = true; left[it.src]--; }
+        else it.on = false;
+      });
+      refreshCardImgs();
+    }
+    if (d.at) {
+      var dt = new Date(d.at);
+      document.getElementById('autosave-tip').textContent = '已恢复 ' +
+        ('0' + (dt.getMonth() + 1)).slice(-2) + '-' + ('0' + dt.getDate()).slice(-2) + ' ' +
+        ('0' + dt.getHours()).slice(-2) + ':' + ('0' + dt.getMinutes()).slice(-2) + ' 的草稿';
+    }
+  } catch (e) {}
+})();
+
+/* ---------- 发布 ---------- */
+function publish() {
+  var c = getContent();
+  if (c.empty) { showError('写点什么再发布吧 —— 文字或图片都可以'); return false; }
+
+  var chosen = cardItems.filter(function (it) { return it.on; }).map(function (it) { return it.src; });
+
+  var posts = [];
+  try { posts = JSON.parse(localStorage.getItem('xj-feed') || '[]'); } catch (e) {}
+
+  try {
+    var s = JSON.parse(localStorage.getItem('xj-session') || 'null') || {};
+    posts.unshift({
+      id: Date.now(),
+      name: s.name || '同学',
+      initial: s.initial || '学',
+      time: '刚刚',
+      tag: currentTag(),
+      title: document.getElementById('post-title').value.trim(),
+      html: c.html,
+      imgs: chosen,                       /* ← 卡片显示这几张，其余只留在正文 */
+      cover: chosen[0] || null,
+      noCardImgs: chosen.length === 0,     /* ← 明确"不显示图"，首页要认这个 */
+      vis: currentVis(),
+      likes: 0,
+      cmts: []
+    });
+    localStorage.setItem('xj-feed', JSON.stringify(posts));
+    localStorage.removeItem('xj-draft');
+    window.location.href = 'home.html';
+    return true;
+  } catch (e) {
+    showError(e && (e.name === 'QuotaExceededError' || e.code === 22)
+      ? '图片太多，浏览器本地存不下 —— 少放几张或换小图再发布'
+      : '发布失败，请重试');
+    return false;
+  }
+}
+document.getElementById('publish-btn').addEventListener('click', publish);
+
+/* ============================================================
+   ?demo：塞三条示例内容（排版/卡片图预览用，不影响真实数据）
+   ============================================================ */
+if (/demo/.test(location.search) && quill && !quill.getText().trim()) {
+  (function () {
+    function pic(c1, c2, c3) {
+      var svg = '<svg xmlns=\'http://www.w3.org/2000/svg\' width=\'640\' height=\'480\'>' +
+        '<defs><linearGradient id=\'g\' x1=\'0\' y1=\'0\' x2=\'0\' y2=\'1\'>' +
+        '<stop offset=\'0\' stop-color=\'' + c1 + '\'/><stop offset=\'0.62\' stop-color=\'' + c2 + '\'/>' +
+        '<stop offset=\'1\' stop-color=\'' + c3 + '\'/></linearGradient></defs>' +
+        '<rect width=\'640\' height=\'480\' fill=\'url(%23g)\'/>' +
+        '<circle cx=\'480\' cy=\'120\' r=\'46\' fill=\'rgba(255,250,235,0.92)\'/>' +
+        '<path d=\'M0 340 L150 240 L290 330 L430 250 L640 360 L640 480 L0 480 Z\' fill=\'rgba(20,30,58,0.55)\'/>' +
+        '<path d=\'M0 400 L180 320 L360 405 L520 330 L640 410 L640 480 L0 480 Z\' fill=\'rgba(12,18,40,0.72)\'/></svg>';
+      return 'data:image/svg+xml,' + svg.replace(/#/g, '%23');
+    }
+    document.getElementById('post-title').value = '周六的湖畔自习';
+    quill.insertText(0, '下午在湖边写了两张卷子，风一直吹。\n', 'user');
+    quill.insertText(quill.getLength() - 1, '顺手把错的题抄进错题本：', 'user');
+    ['#FFD9A0|#F0906A|#5A3860', '#9FD8FF|#5C8DE0|#1E2A5E', '#C9F0E8|#5FB8A8|#204A58'].forEach(function (t) {
+      var c = t.split('|');
+      quill.insertEmbed(quill.getLength() - 1, 'image', pic(c[0], c[1], c[2]), 'user');
+    });
+    refreshCardImgs();
+  })();
+}
+
+/* ============================================================
+   ?selftest：无头验证（不走交互，直接调 API 断言后写进 body）
+   ============================================================ */
+if (/selftest/.test(location.search)) {
+  (function selftest() {
+    var out = [];
+    function ok(name, cond, extra) {
+      out.push((cond ? 'PASS' : 'FAIL') + ' ' + name + (extra !== undefined ? '=' + extra : ''));
+    }
+    if (!quill) {
+      document.body.setAttribute('data-selftest', 'FAIL no-quill');
+      return;
+    }
+    /* 1. Markdown 快捷：# 空格 → h1 */
+    quill.focus();
+    quill.setText('', 'silent');
+    quill.insertText(0, '# ', 'user');
+    ok('md-h1', /<h1/.test(quill.root.innerHTML), quill.root.innerHTML.slice(0, 40));
+
+    /* 2. 待办清单 */
+    quill.setText('', 'silent');
+    quill.insertText(0, '- [ ] ', 'user');
+    var li = quill.root.querySelector('li');
+    ok('md-check', !!li && (li.getAttribute('data-list') === 'checked' || li.getAttribute('data-list') === 'unchecked'),
+      li ? li.getAttribute('data-list') : 'no-li');
+
+    /* 3. 引用 */
+    quill.setText('', 'silent');
+    quill.insertText(0, '> ', 'user');
+    ok('md-quote', /<blockquote/.test(quill.root.innerHTML));
+
+    /* 4. 三张图 → 默认全勾、卡片计数正确 */
+    quill.setText('', 'silent');
+    var px = 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';
+    [0, 1, 2].forEach(function (i) { quill.insertEmbed(quill.getLength() - 1, 'image', px + '#' + i, 'user'); });
+    ok('imgs-in-editor', imgCountInEditor() === 3, imgCountInEditor());
+    ok('card-all-on', cardItems.filter(function (x) { return x.on; }).length === 3,
+      cardItems.filter(function (x) { return x.on; }).length);
+    ok('badge-order', !!coverGrid.querySelector('.cover-opt.on .ck'));
+
+    /* 5. 只留 2 张 → 首页就该显示 2 张 */
+    cardItems[1].on = false;
+    refreshCardImgs();
+    ok('card-uncheck', cardItems.filter(function (x) { return x.on; }).length === 2);
+
+    /* 6. 9 张上限：再塞 10 张，编辑器里不超过 9 */
+    var before = imgCountInEditor();
+    for (var k = 0; k < 10; k++) {
+      var room = MAX_IMG - imgCountInEditor();
+      if (room <= 0) break;
+      quill.insertEmbed(quill.getLength() - 1, 'image', px + '?z' + k, 'user');
+    }
+    ok('cap-9', imgCountInEditor() === 9, before + '→' + imgCountInEditor());
+    ok('add-blocked', MAX_IMG - imgCountInEditor() === 0);
+
+    /* 7. 气泡条：选中文字后浮出 */
+    quill.setText('hello world', 'silent');
+    quill.setSelection(0, 5);
+    quill.setSelection(0, 5, 'user');
+    quill.emitter.emit('selection-change', { index: 0, length: 5 }, null, 'user');
+    ok('bubble-shown', !bubble.hidden, bubble.hidden);
+    ok('bubble-pos', /^\d+px$/.test(bubble.style.left || ''), bubble.style.left);
+
+    /* 8. 发布落库：imgs 只存勾选的、cover 取第一张 */
+    quill.setText('', 'silent');
+    quill.insertText(0, '发布测试', 'user');
+    cardItems.forEach(function (it) { it.on = true; });
+    quill.insertEmbed(quill.getLength() - 1, 'image', px + '#a', 'user');
+    quill.insertEmbed(quill.getLength() - 1, 'image', px + '#b', 'user');
+    refreshCardImgs();
+    cardItems[1].on = false;              /* 只留第一张 */
+    refreshCardImgs();
+    localStorage.removeItem('xj-feed');
+    /* publish() 会跳转，测试里换成同一套逻辑的纯函数断言 */
+    var chosen = cardItems.filter(function (x) { return x.on; }).map(function (x) { return x.src; });
+    ok('publish-imgs', chosen.length === 1, chosen.length);
+    ok('publish-cover-is-first', chosen[0] === cardItems[0].src);
+
+    /* 9. 全不勾 → noCardImgs 标记 */
+    cardItems.forEach(function (it) { it.on = false; });
+    refreshCardImgs();
+    ok('none-note', !coverNote.hidden);
+
+    /* 10. 富文本扩展：颜色 / 底色 / 字号 / 对齐 */
+    quill.setText('format test', 'silent');
+    quill.formatText(0, 6, 'color', '#E5484D', 'user');
+    ok('fmt-color', /color:\s*(rgb\(229,\s*72,\s*77\)|#E5484D)/i.test(quill.root.innerHTML),
+      (quill.root.innerHTML.match(/color:[^;"]+/) || ['none'])[0]);
+    quill.formatText(0, 6, 'background', '#FFF3B0', 'user');
+    ok('fmt-bg', /background-color/i.test(quill.root.innerHTML));
+    quill.formatText(0, 6, 'size', 'large', 'user');
+    ok('fmt-size', /ql-size-large/.test(quill.root.innerHTML));
+    quill.formatLine(0, 1, 'align', 'center', 'user');
+    ok('fmt-align', /ql-align-center/.test(quill.root.innerHTML));
+
+    /* 11. 气泡条 A → 面板 → 点色块真的上色 */
+    quill.setText('palette test', 'silent');
+    quill.setSelection(0, 7, 'user');
+    quill.emitter.emit('selection-change', { index: 0, length: 7 }, null, 'user');
+    document.getElementById('bubble-color').click();
+    ok('pal-open', !palette.hidden);
+    palette.querySelector('.pal-row[data-kind="color"] button[data-v="#3E63DD"]').click();
+    ok('pal-apply', /3E63DD|rgb\(62,\s*99,\s*221\)/i.test(quill.root.innerHTML),
+      (quill.root.innerHTML.match(/color:[^;"]+/) || ['none'])[0]);
+    ok('pal-closed', palette.hidden);
+
+    /* 12. 粘贴一张图必须只进一张（Quill 自带粘贴要被拦掉） */
+    function finish() {
+      document.body.setAttribute('data-selftest', out.join(';'));
+    }
+    try {
+      var bin = atob('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8AAAwAB/wD/AL0AAAAASUVORK5CYII=');
+      var u8 = new Uint8Array(bin.length);
+      for (var bi = 0; bi < bin.length; bi++) u8[bi] = bin.charCodeAt(bi);
+      var dt = new DataTransfer();
+      dt.items.add(new File([u8], 'p.png', { type: 'image/png' }));
+      quill.setText('', 'silent');
+      var ev = new ClipboardEvent('paste', { bubbles: true, cancelable: true });
+      Object.defineProperty(ev, 'clipboardData', { value: dt });
+      quill.root.dispatchEvent(ev);
+
+      setTimeout(function () {
+        ok('paste-once', imgCountInEditor() === 1, imgCountInEditor());
+
+        /* 11. 同一张图插两次 → 两个开关各自独立 */
+        quill.setText('', 'silent');
+        quill.insertEmbed(0, 'image', px + '#dup', 'user');
+        quill.insertEmbed(quill.getLength() - 1, 'image', px + '#dup', 'user');
+        refreshCardImgs();
+        ok('dup-two', cardItems.length === 2 && cardItems[0].src === cardItems[1].src &&
+          cardItems[0].pid !== cardItems[1].pid, cardItems.length);
+        cardItems[0].on = false;
+        refreshCardImgs();
+        ok('dup-independent', cardItems[0].on === false && cardItems[1].on === true,
+          cardItems.map(function (x) { return x.on ? 1 : 0; }).join(''));
+
+        /* 13. 分割线：按钮插入 + Markdown --- 快捷 */
+        quill.setText('', 'silent');
+        insertDivider();
+        ok('divider-insert', !!quill.root.querySelector('hr'));
+        quill.setText('', 'silent');
+        quill.insertText(0, '---', 'user');
+        ok('md-divider', !!quill.root.querySelector('hr'),
+          quill.root.innerHTML.slice(0, 50));
+
+        /* 14. 行内代码 / 上标 */
+        quill.setText('code test', 'silent');
+        quill.formatText(0, 4, 'code', true, 'user');
+        ok('fmt-code', /<code/.test(quill.root.innerHTML), quill.root.innerHTML.slice(0, 50));
+        quill.formatText(0, 4, 'script', 'super', 'user');
+        ok('fmt-script', /<sup/.test(quill.root.innerHTML));
+
+        /* 15. 撤销 / 重做 */
+        quill.setText('', 'silent');
+        quill.history.clear();
+        quill.insertText(0, 'undo me', 'user');
+        if (quill.history.cutoff) quill.history.cutoff();     /* 切开 batch，否则两次输入被合并成一步 */
+        quill.insertText(0, 'X', 'user');
+        quill.history.undo();
+        ok('history-undo', quill.getText().trim() === 'undo me', JSON.stringify(quill.getText().trim()));
+        quill.history.redo();
+        ok('history-redo', quill.getText().trim() === 'Xundo me', JSON.stringify(quill.getText().trim()));
+
+        /* 16. 点图片开大图 → 删除这张 */
+        var iv = document.getElementById('img-viewer');
+        quill.setText('', 'silent');
+        quill.insertEmbed(0, 'image', px + '#view', 'user');
+        refreshCardImgs();
+        var im0 = quill.root.querySelector('img');
+        im0.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+        ok('viewer-open', !iv.hidden &&
+          document.getElementById('iv-img').getAttribute('src') === im0.getAttribute('src'));
+        document.getElementById('iv-del').click();
+        ok('viewer-del', imgCountInEditor() === 0 && iv.hidden, imgCountInEditor());
+
+        /* 17. 专注模式 / 快捷键面板 */
+        var fBtn = document.getElementById('btn-focus');
+        var kPop = document.getElementById('kbd-pop');
+        fBtn.click();
+        ok('focus-on', document.body.classList.contains('focus-mode'));
+        fBtn.click();
+        ok('focus-off', !document.body.classList.contains('focus-mode'));
+        document.getElementById('btn-kbd').click();
+        ok('kbd-open', !kPop.hidden);
+        document.body.click();
+        ok('kbd-close', kPop.hidden);
+
+        /* 18. Ctrl+Shift+V 粘成纯文本（不带入外部样式） */
+        quill.setText('old', 'silent');
+        var dt2 = new DataTransfer();
+        dt2.setData('text/plain', 'plain');
+        dt2.setData('text/html', '<b style="color:red">plain</b>');
+        var ev2 = new ClipboardEvent('paste', { bubbles: true, cancelable: true });
+        Object.defineProperty(ev2, 'clipboardData', { value: dt2 });
+        document.dispatchEvent(new KeyboardEvent('keydown', {
+          key: 'v', shiftKey: true, ctrlKey: true, bubbles: true
+        }));
+        quill.root.dispatchEvent(ev2);
+        var pastedHtml = quill.root.innerHTML;
+        ok('paste-plain',
+          quill.getText().indexOf('plain') !== -1 &&
+          pastedHtml.indexOf('color') === -1 && pastedHtml.indexOf('<b') === -1,
+          JSON.stringify(quill.getText().trim()) + '|' + pastedHtml.slice(0, 60));
+
+        finish();
+      }, 800);
+    } catch (err) {
+      ok('paste-once', false, 'err:' + (err && err.message));
+      finish();
+    }
+  })();
+}
+</script>
+</body>
+</html>

@@ -1,0 +1,980 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="light">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#F5F6F8">
+<title>任务发布 · 学迹管理端</title>
+<link rel="stylesheet" href="style.css?v=20261021c">
+</head>
+<body data-page="tasks" data-title="任务发布" data-sub="单词按遗忘曲线排、题目从题库里挑 · 预览审查后再发布">
+
+<div class="app">
+  <aside class="sb" id="sb"></aside>
+  <div class="main">
+    <header class="tb" id="tb"></header>
+    <div class="content">
+
+      <div class="split">
+        <div>
+          <section class="sec">
+            <div class="sec-title">
+              <span id="list-title">今日任务</span><span class="count" id="list-sub"></span>
+              <span class="right">
+                <button class="btn btn-sm" id="ai-sug"></button>
+                <button class="btn btn-sm" id="add-task">添加任务</button>
+                <button class="btn btn-sm btn-primary" id="publish">发布到学生端</button>
+              </span>
+            </div>
+            <div class="card" style="padding:6px 0" id="list"></div>
+          </section>
+
+          <section class="sec">
+            <div class="sec-title">
+              <span>单词任务</span><span class="count" id="wb-sub"></span>
+              <span class="right"><button class="btn btn-sm" id="wb-goto">去单词表</button></span>
+            </div>
+            <div class="card" id="wbsel"></div>
+            <p class="hint">
+              每天背几个新词由<b>学生在用户端自己设定</b>（存在后端），这里只读展示。
+              排程时<b>到期复习优先全给</b>，不够再按词书顺序补新词 —— 点「生成今日词单」看今天的词，
+              审查（可逐词剔除）后再加入任务、发布。
+            </p>
+          </section>
+        </div>
+
+        <div>
+          <section class="sec">
+            <div class="sec-title">学生端会看到什么 <span class="count">· 实时预览</span></div>
+            <div class="card" id="preview"></div>
+          </section>
+
+          <section class="sec">
+            <div class="sec-title">发布状态</div>
+            <div class="card" id="state"></div>
+          </section>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+<script src="demo.js?v=20261021c"></script>
+<script src="admin.js?v=20261021c"></script>
+<script>
+(function () {
+  var E = ADMIN.esc, I = ADMIN.icon;
+  var sid = ADMIN.currentId();
+  var stu = ADMIN.currentStudent();
+  var TYPE_NAME = { T1: '选择', T2: '填空', T3: '简答', T4: '材料' };
+  var KIND = {
+    practice: { label: '每日题目', ico: 'check' },
+    words:    { label: '必备单词', ico: 'abc' },
+    reading:  { label: '阅读任务', ico: 'book' },
+    essay:    { label: '作文',     ico: 'pen' },
+    calc:     { label: '每日计算', ico: 'target' },
+    wrong:    { label: '错题复习', ico: 'refresh' }
+  };
+  /* 类型 → 默认科目 / 默认用时（切类型时跟着变，可手动改） */
+  var DEF = {
+    practice: { subject: '数学', min: 25 },
+    words:    { subject: '英语', min: 12 },
+    reading:  { subject: '语文', min: 20 },
+    essay:    { subject: '语文', min: 30 },
+    calc:     { subject: '数学', min: 15 },
+    wrong:    { subject: '数学', min: 10 }
+  };
+  var SUBJECTS = ['数学', '语文', '英语', '物理', '化学', '生物', '历史', '道法', '地理'];
+  var GRADES = ['初一', '初二', '初三', '不限'];
+  var genSeq = Date.now() % 1000000;
+
+  /* ================= 基础 ================= */
+  function data() { return DB.get('tasks', {})[sid] || { date: ADMIN.today(), published: false, items: [] }; }
+  function save(t) { var all = DB.get('tasks', {}); all[sid] = t; DB.set('tasks', all); }
+  function wordsItem(t) { return (t.items || []).filter(function (x) { return x.kind === 'words'; })[0] || null; }
+
+  function wbAll() { return DB.get('wordbooks', []); }
+  function wbById(id) { return wbAll().filter(function (b) { return b.id === id; })[0] || null; }
+  function pubWbs() { return wbAll().filter(function (b) { return b.published; }); }
+  function pubBks() { return DB.get('books', []).filter(function (b) { return b.published; }); }
+  function bkById(id) { return DB.get('books', []).filter(function (b) { return b.id === id; })[0] || null; }
+
+  var _wmap = null;
+  function wmap() {
+    if (!_wmap) {
+      _wmap = {};
+      DB.get('words', []).forEach(function (w) { _wmap[w.id] = w; });
+    }
+    return _wmap;
+  }
+  function wordById(id) { return wmap()[id] || null; }
+  function wordsOfBook(id) { return DB.get('words', []).filter(function (w) { return w.book === id; }); }
+  function unitsOfWb(b) {
+    var out = (b.units || []).slice();
+    wordsOfBook(b.id).forEach(function (w) { if (w.unit && out.indexOf(w.unit) < 0) out.push(w.unit); });
+    return out;
+  }
+  /* 每天背几个新词：学生在用户端自己设，后端存；这里只读 */
+  function perDayOf() { return (stu && stu.wordPerDay) || 8; }
+
+  function pad(n) { return (n < 10 ? '0' : '') + n; }
+  function defDueAt() {
+    var d = new Date(); d.setDate(d.getDate() + 3); d.setHours(20, 0, 0, 0);
+    return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate()) + 'T' + pad(d.getHours()) + ':' + pad(d.getMinutes());
+  }
+  function dueLabel(v) {
+    if (!v) return '';
+    var m = String(v).match(/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})/);
+    if (!m) return v;
+    return m[2] + '-' + m[3] + ' ' + m[4] + ':' + m[5];
+  }
+  function emptyBox(title, sub) {
+    return '<div class="empty"><div class="ico">' + I('abc') + '</div>' +
+      '<div class="empty-title">' + E(title) + '</div><div class="empty-sub">' + E(sub) + '</div></div>';
+  }
+
+  /* ================= 主渲染 ================= */
+  function render() {
+    var t = data();
+    document.getElementById('list-title').textContent = (stu ? stu.name : '') + ' · 今日任务';
+    document.getElementById('list-sub').textContent = '· ' + t.date + ' · ' + t.items.length + ' 件 · ' +
+      (t.published ? '已发布' : '草稿（未发布）');
+    document.getElementById('publish').textContent = t.published ? '重新发布（覆盖学生端）' : '发布到学生端';
+
+    document.getElementById('list').innerHTML = t.items.length ? t.items.map(function (x, i) {
+      var k = KIND[x.kind] || KIND.practice;
+      return '<div class="row">' +
+        '<span class="tk-ico">' + I(k.ico) + '</span>' +
+        '<div class="row-main">' +
+          '<div class="row-title">' + E(x.title) +
+            '<span class="chip ' + (x.subject === '数学' ? 'brand' : '') + '">' + E(x.subject) + '</span>' +
+            (x.due ? '<span class="chip warn">' + E(x.due) + '前交</span>' : '') +
+            (x.opt && x.opt.pool && x.opt.pool.length ? '<span class="chip line">' + x.opt.pool.length + ' 道新题待入库</span>' : '') +
+          '</div>' +
+          '<div class="row-meta">' + E(x.kp) + ' · ' + E(x.detail) + '</div>' +
+        '</div>' +
+        '<div class="row-act">' +
+          '<span class="pill"><b>' + x.minutes + '</b> 分钟</span>' +
+          '<button class="btn btn-xs btn-ghost" data-act="edit" data-i="' + i + '">改</button>' +
+          '<button class="btn btn-xs btn-ghost" data-act="del" data-i="' + i + '">' + I('trash') + '</button>' +
+        '</div>' +
+      '</div>';
+    }).join('') : '<div class="empty"><div class="ico">' + I('calendar') + '</div>' +
+      '<div class="empty-title">还没有任务</div><div class="empty-sub">手动添加，或点「AI 建议」按薄弱点自动配一套</div></div>';
+
+    /* 学生端预览 */
+    var done = t.items.filter(function (x) { return x.done; }).length;
+    document.getElementById('preview').innerHTML =
+      '<div style="display:flex;align-items:center;gap:14px;margin-bottom:12px">' +
+        '<div class="ring" style="--p:' + (t.items.length ? Math.round(done / t.items.length * 100) : 0) + '">' +
+          '<div class="ring-txt"><b>' + done + '</b><span>/ ' + t.items.length + ' 件</span></div></div>' +
+        '<div><div style="font-size:13.5px;font-weight:600">今天 ' + t.items.length + ' 件事</div>' +
+        '<div class="row-meta">任务由管理端每天发布 · 按顺序做完就算今天过关</div></div>' +
+      '</div>' +
+      t.items.map(function (x) {
+        return '<div class="row" style="padding:9px 0">' +
+          '<span class="tl-dot" style="padding-top:4px"><i class="' + (x.done ? 'ok' : '') + '"></i></span>' +
+          '<div class="row-main"><div class="row-title" style="font-size:13px">' + E(x.title) +
+            (x.due ? '<span class="chip warn" style="font-size:10.5px">' + E(x.due) + '前</span>' : '') + '</div>' +
+          '<div class="row-meta">' + E(x.subject) + ' · ' + E(x.kp) + '</div></div>' +
+        '</div>';
+      }).join('');
+
+    document.getElementById('state').innerHTML =
+      '<div class="kv">' +
+        '<div class="kv-row"><div class="kv-k">发布状态</div><div class="kv-v">' +
+          (t.published ? '<span class="chip ok">已发布</span> 学生端打开「每日任务」即可看到'
+                       : '<span class="chip warn">未发布</span> 学生端还看不到今天的内容') + '</div></div>' +
+        '<div class="kv-row"><div class="kv-k">任务日期</div><div class="kv-v">' + E(t.date) + '</div></div>' +
+        '<div class="kv-row"><div class="kv-k">总预计用时</div><div class="kv-v">' +
+          t.items.reduce(function (n, x) { return n + (x.minutes || 0); }, 0) + ' 分钟</div></div>' +
+        '<div class="kv-row"><div class="kv-k">完成情况</div><div class="kv-v">' + done + ' / ' + t.items.length +
+          ' 件（完成状态由学生端回传，这里只读）</div></div>' +
+      '</div>';
+
+    renderWb();
+  }
+
+  /* ================= 单词任务（词书 + 进度 + 复习曲线） ================= */
+  var wbSel = '';
+
+  function renderWb() {
+    var all = wbAll(), bs = pubWbs();
+    document.getElementById('wb-sub').textContent = '· ' + bs.length + ' 本已上架 / 共 ' + all.length + ' 本';
+    var box = document.getElementById('wbsel');
+
+    if (!all.length) { box.innerHTML = emptyBox('还没有词书', '先去「单词表」建一本（如：七年级上册单词），再回来发布单词任务'); return; }
+    if (!bs.length) { box.innerHTML = emptyBox('没有已上架的词书', '单词表里把词书点一下「发布」，这里才能排今天的词'); return; }
+
+    if (!wbSel || !bs.some(function (x) { return x.id === wbSel; })) wbSel = bs[0].id;
+    var b = wbById(wbSel) || bs[0];
+    var per = perDayOf();
+    var plan = DB.wordPlan({ bookId: b.id, perDay: per });
+    var st = plan.stat;
+    var cur = wordsItem(data());
+    var curHere = cur && cur.opt && cur.opt.wb === b.id && cur.opt.plan;
+
+    if (!st.total) {
+      box.innerHTML = '<div class="wb-top">' + wbSelectHTML(bs, b.id) + '</div>' +
+        emptyBox('这本书还没有词条', '去「单词表」给《' + b.name + '》录入单词，排程才有数据可用');
+      return;
+    }
+
+    var T = Math.max(1, st.total);
+    var pM = (st.mastered / T * 100).toFixed(1);
+    var pL = (st.learning / T * 100).toFixed(1);
+    var mx = Math.max.apply(null, plan.forecast.concat([1]));
+
+    box.innerHTML =
+      '<div class="wb-top">' + wbSelectHTML(bs, b.id) +
+        '<span class="chip line" title="每天背几个新词由学生在用户端自己设定，这里只读">学生设定 · 每天 <b>' + per + '</b> 词</span>' +
+        '<button class="btn btn-primary btn-sm" data-gen="1" style="margin-left:auto">' +
+          (curHere ? '重新生成今日词单' : '生成今日词单') + '</button>' +
+      '</div>' +
+
+      (curHere ? '<div class="wb-cur">' +
+        '<span class="chip ok">今天已配</span>' +
+        '<span>新学 <b>' + (cur.opt.plan.fresh || []).length + '</b> · 复习 <b>' + (cur.opt.plan.due || []).length +
+        '</b> · 共 <b>' + ((cur.opt.plan.fresh || []).length + (cur.opt.plan.due || []).length) + '</b> 词</span>' +
+        '<span class="muted">' + E(cur.detail || '') + '</span>' +
+      '</div>' : '') +
+
+      '<div class="wb-grid">' +
+        '<div class="wb-cell">' +
+          '<div class="wb-ph"><b>学习进度</b><span>已学 ' + (st.mastered + st.learning) + ' / ' + st.total + ' 词</span></div>' +
+          '<div class="pbar">' +
+            '<i class="ok" style="width:' + pM + '%"></i>' +
+            '<i class="brand" style="width:' + pL + '%"></i>' +
+          '</div>' +
+          '<div class="wb-lg">' +
+            '<span><i class="dot ok"></i>已掌握 ' + st.mastered + '</span>' +
+            '<span><i class="dot brand"></i>在学 ' + st.learning + '</span>' +
+            '<span><i class="dot line"></i>未学 ' + st.fresh + '</span>' +
+          '</div>' +
+        '</div>' +
+        '<div class="wb-cell">' +
+          '<div class="wb-ph"><b>未来 7 天待复习</b><span>' + (plan.dueTotal ? '今天要清 ' + plan.dueTotal + ' 词' : '今天没有到期') + '</span></div>' +
+          '<div class="ebb">' + plan.forecast.map(function (n, i) {
+            var h = Math.round(n / mx * 100);
+            return '<div class="ebb-col' + (i === 0 ? ' on' : '') + '">' +
+              '<b>' + n + '</b>' +
+              '<div class="ebb-bar"><i style="--h:' + h + '%"></i></div>' +
+              '<span>' + (i === 0 ? '今天' : '+' + i) + '</span>' +
+            '</div>';
+          }).join('') + '</div>' +
+        '</div>' +
+      '</div>';
+  }
+
+  function wbSelectHTML(bs, curId) {
+    return '<select class="sel" id="wb-book">' + bs.map(function (b) {
+      var n = wordsOfBook(b.id).length;
+      return '<option value="' + b.id + '"' + (b.id === curId ? ' selected' : '') + '>' +
+        E(b.name) + '（' + n + ' 词）</option>';
+    }).join('') + '</select>';
+  }
+
+  /* ---------- 今日词单 · 预览抽屉 ---------- */
+  function openPlanDrawer(bookId) {
+    var b = wbById(bookId);
+    if (!b) return;
+    var per = perDayOf();
+    var S = { fresh: [], due: [], freshTotal: 0 };
+
+    function replan() {
+      var p = DB.wordPlan({ bookId: bookId, perDay: per });
+      S.fresh = p.fresh.slice(0, per).map(function (w) { return w.id; });
+      S.due = p.due.map(function (w) { return w.id; });
+      S.freshTotal = p.freshTotal;
+      return p;
+    }
+    var plan0 = replan();
+
+    function wdRow(id, isNew) {
+      var w = wordById(id);
+      if (!w) return '';
+      var lvChip = '';
+      if (!isNew) {
+        var gap = DB.ebb[Math.min(w.lv, 6) - 1] || 0;
+        lvChip = '<span class="chip brand">第 ' + w.lv + ' 轮 · 隔 ' + gap + ' 天</span>' +
+                 '<span class="chip">上次 ' + Math.round((w.right || 0) * 100) + '%</span>';
+      }
+      return '<div class="wd-row">' +
+        '<div class="wd-main">' +
+          '<div class="wd-w">' + E(w.w) + ' <span class="mono">' + E(w.phon || '') + '</span>' +
+            (isNew ? '<span class="chip line">新词</span>' : '') + '</div>' +
+          '<div class="wd-m">' + E(w.mean || '') + '</div>' +
+        '</div>' +
+        '<span class="chip">' + E(w.unit || '未分单元') + '</span>' +
+        lvChip +
+        '<button type="button" class="wd-x" data-drop="' + E(id) + '" data-pool="' + (isNew ? 'fresh' : 'due') +
+          '" title="今天先不背这个">' + I('x') + '</button>' +
+      '</div>';
+    }
+
+    var d = ADMIN.drawer({
+      title: '今日词单 · ' + b.name,
+      wide: true,
+      body: '<div id="plan-body"></div>',
+      foot: '<span class="muted" id="plan-note" style="margin-right:auto"></span>' +
+            '<button class="btn btn-sm" data-x="reset">重置</button>' +
+            '<button class="btn btn-primary" data-x="ok">确认加入今日任务</button>',
+      onMount: function (d) {
+        function paint() {
+          var fN = S.fresh.length, dN = S.due.length, tot = fN + dN;
+          var mins = Math.max(3, Math.round(tot * 0.5));
+          document.getElementById('plan-note').textContent = '排程依据：到期复习优先，剩余补新词';
+          d.querySelector('#plan-body').innerHTML =
+            '<div class="plan-sum">' +
+              '<div class="pn"><b>' + fN + '</b><span>新学</span></div>' +
+              '<div class="pn"><b>' + dN + '</b><span>复习</span></div>' +
+              '<div class="pn"><b>' + tot + '</b><span>合计词数</span></div>' +
+              '<div class="pn"><b>' + mins + '</b><span>预计分钟</span></div>' +
+            '</div>' +
+            '<div class="plan-sec">' +
+              '<div class="plan-h">新学 <b>' + fN + '</b> 个' +
+                '<span class="muted">· 按词书顺序往下推，剩余未学 ' + Math.max(0, S.freshTotal - fN) + ' 个</span></div>' +
+              (fN ? S.fresh.map(function (id) { return wdRow(id, true); }).join('')
+                  : '<div class="plan-empty">新词已全部剔除 —— 今天只做复习</div>') +
+            '</div>' +
+            '<div class="plan-sec">' +
+              '<div class="plan-h">复习 <b>' + dN + '</b> 个' +
+                '<span class="muted">· 按到期先后排，越靠前越急（含逾期的）</span></div>' +
+              (dN ? S.due.map(function (id) { return wdRow(id, false); }).join('')
+                  : '<div class="plan-empty">今天没有到期的旧词</div>') +
+            '</div>';
+          var ok = d.querySelector('[data-x="ok"]');
+          ok.disabled = !tot;
+          ok.textContent = tot ? '确认加入今日任务（' + tot + ' 词）' : '今天没有要背的词';
+        }
+
+        d.querySelector('#plan-body').addEventListener('click', function (e) {
+          var x = e.target.closest('[data-drop]');
+          if (!x) return;
+          var id = x.getAttribute('data-drop');
+          var pool = x.getAttribute('data-pool') === 'fresh' ? S.fresh : S.due;
+          var i = pool.indexOf(id);
+          if (i >= 0) pool.splice(i, 1);
+          paint();
+        });
+
+        d.querySelector('[data-x="reset"]').addEventListener('click', function () { replan(); paint(); ADMIN.toast('已重置为系统的排程结果'); });
+
+        d.querySelector('[data-x="ok"]').addEventListener('click', function () {
+          var t = data();
+          var idx = -1;
+          t.items.forEach(function (x, i) { if (x.kind === 'words') idx = i; });
+          var old = idx >= 0 ? t.items[idx] : null;
+          var fN = S.fresh.length, dN = S.due.length;
+          var rec = {
+            id: old ? old.id : 't' + Date.now(),
+            kind: 'words', title: '每日必备单词', subject: '英语',
+            kp: b.name + ' · 整本推进',
+            detail: '新学 ' + fN + ' · 复习 ' + dN + ' · 按遗忘曲线排',
+            minutes: Math.max(3, Math.round((fN + dN) * 0.5)),
+            done: old ? old.done : false,
+            opt: {
+              wb: b.id, wbName: b.name, unit: '', units: [],
+              perDay: per, grade: b.grade || (stu ? stu.grade : ''),
+              n: fN + dN, plan: { fresh: S.fresh.slice(), due: S.due.slice() }
+            }
+          };
+          if (idx >= 0) t.items[idx] = rec; else t.items.push(rec);
+          save(t);
+          ADMIN.closeDrawer();
+          ADMIN.toast('已加入今日任务：新学 ' + fN + ' + 复习 ' + dN) ;
+          render();
+        });
+
+        paint();
+      }
+    });
+    return d;
+  }
+
+  /* ================= 题目选题器（每日题目 / 每日计算共用） ================= */
+  var PK = null;
+
+  function pkHTML(kind, x) {
+    x = x || {};
+    var o = x.opt || {};
+    var subject = x.kind ? x.subject : DEF[kind].subject;
+    var grade = o.grade || (stu ? stu.grade : '初三');
+    /* 搜索框只回填「上次筛过的词」，不要在编辑时把任务知识点塞进去
+       —— 否则重新打开任务，已选但不含该关键词的题会被筛掉 */
+    var kw = o.kw || '';
+    return '<div class="pk" id="pk">' +
+      '<div class="pk-bar">' +
+        '<select class="sel" id="f-subject">' + SUBJECTS.map(function (g) {
+          return '<option' + (subject === g ? ' selected' : '') + '>' + g + '</option>';
+        }).join('') + '</select>' +
+        '<select class="sel" id="pk-grade">' + GRADES.map(function (g) {
+          return '<option' + (grade === g ? ' selected' : '') + '>' + g + '</option>';
+        }).join('') + '</select>' +
+        '<input class="inp" id="pk-kw" value="' + E(kw) + '" placeholder="按知识点关键词筛">' +
+        '<button type="button" class="btn btn-sm" id="pk-ai">' + I('sparkle') + ' AI 出题</button>' +
+      '</div>' +
+      '<div class="pk-gen" id="pk-gen" hidden>' +
+        '<div class="form-grid two">' +
+          '<div class="field"><label>知识点 / 要求</label>' +
+            '<input class="inp" id="gen-kp" value="' + E(kw) + '" placeholder="如：一元二次方程 · 配方法"></div>' +
+          '<div class="field"><label>生成几道</label><select class="sel" id="gen-n">' +
+            ['3', '5', '8'].map(function (n) { return '<option>' + n + '</option>'; }).join('') + '</select></div>' +
+        '</div>' +
+        '<div class="form-grid two">' +
+          '<div class="field"><label>难度</label><div class="seg" id="gen-diff">' +
+            ['基础', '进阶', '混合'].map(function (v) {
+              return '<button type="button" data-val="' + v + '" class="' + (v === '混合' ? 'on' : '') + '">' + v + '</button>';
+            }).join('') + '</div></div>' +
+          '<div class="field"><label>题型</label><select class="sel" id="gen-type">' +
+            ['不限', 'T1 选择', 'T2 填空', 'T3 简答', 'T4 材料'].map(function (v) { return '<option>' + v + '</option>'; }).join('') +
+          '</select></div>' +
+        '</div>' +
+        '<div class="pk-gen-foot">' +
+          '<span class="muted">原型期按模板生成示意题（正式版由大模型出题，链路一致）。' +
+          '生成的题先当候选，<b>点「发布到学生端」时才自动过审入库</b>。</span>' +
+          '<button type="button" class="btn btn-primary btn-sm" id="gen-go">生成候选题</button>' +
+        '</div>' +
+      '</div>' +
+      '<div class="pk-sum" id="pk-sum"></div>' +
+      '<div class="pk-list" id="pk-list"></div>' +
+      (kind === 'calc' ? '<div class="field" style="margin-top:12px"><label>提交方式</label><div class="seg" id="f-sub">' +
+        ['拍照上传', '直接作答'].map(function (v) {
+          return '<button type="button" data-val="' + v + '" class="' + ((o.submit || '拍照上传') === v ? 'on' : '') + '">' + v + '</button>';
+        }).join('') + '</div></div>' : '') +
+    '</div>';
+  }
+
+  function mountPK(d, kind, x) {
+    var o = (x && x.opt) || {};
+    PK = { sel: {}, gens: [], subject: d.querySelector('#f-subject').value, grade: d.querySelector('#pk-grade').value, kw: (d.querySelector('#pk-kw').value || '').trim() };
+    (o.qids || []).forEach(function (id) { PK.sel[id] = 1; });
+    (o.pool || []).forEach(function (q) { PK.gens.push(q); PK.sel[q.id] = 1; });
+    ADMIN.seg('#gen-diff');
+    if (d.querySelector('#f-sub')) ADMIN.seg('#f-sub');
+
+    d.querySelector('#f-subject').addEventListener('change', function () { PK.subject = this.value; paintPK(d); });
+    d.querySelector('#pk-grade').addEventListener('change', function () { PK.grade = this.value; paintPK(d); });
+    d.querySelector('#pk-kw').addEventListener('input', function () { PK.kw = this.value.trim(); paintPK(d); });
+    d.querySelector('#pk-ai').addEventListener('click', function () {
+      var p = d.querySelector('#pk-gen');
+      p.hidden = !p.hidden;
+      if (!p.hidden) {
+        var g = d.querySelector('#gen-kp');
+        if (!g.value) g.value = PK.kw;
+        g.focus();
+      }
+    });
+    d.querySelector('#pk-list').addEventListener('change', function (e) {
+      var cb = e.target.closest('input[data-q]');
+      if (!cb) return;
+      var id = cb.getAttribute('data-q');
+      if (cb.checked) PK.sel[id] = 1; else delete PK.sel[id];
+      var row = cb.closest('.pk-row');
+      if (row) row.classList.toggle('on', cb.checked);
+      paintSum(d);
+    });
+    d.querySelector('#gen-go').addEventListener('click', function () {
+      var o2 = {
+        subject: d.querySelector('#f-subject').value,
+        grade: d.querySelector('#pk-grade').value,
+        kp: (d.querySelector('#gen-kp').value || '').trim() || '本次任务知识点',
+        n: +d.querySelector('#gen-n').value || 3,
+        diff: ADMIN.segVal(d.querySelector('#gen-diff')) || '混合',
+        type: (d.querySelector('#gen-type').value || '不限').split(' ')[0]
+      };
+      var made = aiGen(o2);
+      made.forEach(function (q) { PK.gens.unshift(q); PK.sel[q.id] = 1; });
+      paintPK(d);
+      ADMIN.toast('AI 已生成 ' + made.length + ' 道候选题（默认勾选，发布时入库）');
+    });
+    paintPK(d);
+  }
+
+  function bankList() { return DB.get('qbank', []).filter(function (q) { return q.status === 'approved'; }); }
+
+  function pkRow(q) {
+    var text = String(q.stem || '').replace(/<[^>]+>/g, '').replace(/\{\{\d+\}\}/g, '____');
+    var on = PK.sel[q.id];
+    return '<label class="pk-row' + (on ? ' on' : '') + '">' +
+      '<input type="checkbox" data-q="' + E(q.id) + '"' + (on ? ' checked' : '') + '>' +
+      '<div class="pk-main">' +
+        '<div class="pk-stem">' + E(text.slice(0, 62)) + (text.length > 62 ? '…' : '') + '</div>' +
+        '<div class="pk-meta">' +
+          '<span class="chip line">' + q.type + ' ' + (TYPE_NAME[q.type] || '') + '</span>' +
+          '<span class="chip">' + E(q.difficulty || '中') + '</span>' +
+          '<span class="chip">' + E(q.kp || '') + '</span>' +
+          (q._new ? '<span class="chip brand">AI 新出 · 发布时入库</span>'
+                  : '<span class="muted">用过 ' + (q.used || 0) + ' 次</span>') +
+        '</div>' +
+      '</div>' +
+      '<span class="pk-score">' + (q.score || 3) + ' 分</span>' +
+    '</label>';
+  }
+
+  function paintPK(d) {
+    var kw = (PK.kw || '').toLowerCase();
+    var hit = bankList().filter(function (q) {
+      if (PK.subject && q.subject !== PK.subject) return false;
+      if (PK.grade && PK.grade !== '不限' && q.grade !== PK.grade) return false;
+      if (kw && (q.kp + ' ' + q.stem).toLowerCase().indexOf(kw) < 0) return false;
+      return true;
+    });
+    var rows = PK.gens.concat(hit).slice(0, 40);
+    d.querySelector('#pk-list').innerHTML = rows.length ? rows.map(pkRow).join('')
+      : '<div class="pk-empty">这个筛选下题库没有匹配的题 —— 换个关键词，或点「AI 出题」当场生成</div>';
+    paintSum(d);
+    return hit.length;
+  }
+
+  function paintSum(d) {
+    var selN = 0, newN = 0;
+    Object.keys(PK.sel).forEach(function (k) {
+      if (!PK.sel[k]) return;
+      selN++;
+      if (k.indexOf('_n') === 0) newN++;
+    });
+    var mins = Math.max(3, Math.round(selN * 2.2));
+    d.querySelector('#pk-sum').innerHTML =
+      '已选 <b>' + selN + '</b> 题 · 预计 <b>' + mins + '</b> 分钟' +
+      (newN ? ' · 其中 <b>' + newN + '</b> 道 AI 新出（发布任务时自动过审入库）' : '');
+  }
+
+  /* AI 出题：原型期按模板生成，正式版走大模型；返回结构完整的候选题 */
+  function aiGen(o) {
+    var out = [];
+    for (var i = 0; i < o.n; i++) {
+      var t = (o.type === '不限' ? ['T1', 'T3'][i % 2] : o.type);
+      out.push(mkQ(t, o, i));
+    }
+    return out;
+  }
+  function mkQ(t, o, i) {
+    var q = {
+      id: '_n' + (++genSeq), _new: true, subject: o.subject, grade: o.grade === '不限' ? '' : o.grade,
+      kp: o.kp, difficulty: o.diff === '混合' ? (i % 2 ? '中' : '易') : (o.diff === '基础' ? '易' : '难'),
+      star: o.diff === '进阶' ? 3 : 2, source: 'AI',
+      expl: 'AI 生成的示意解析；正式版由大模型给出规范解析。'
+    };
+    if (t === 'T1') {
+      q.type = 'T1'; q.score = 3;
+      q.stem = '关于「' + o.kp + '」，下列说法正确的是（　）';
+      q.options = ['与本知识点的定义不符', '与「' + o.kp + '」的基本结论一致', '只在特殊条件下成立', '以上说法都不正确'];
+      q.answer = 'B';
+    } else if (t === 'T2') {
+      q.type = 'T2'; q.score = 4;
+      q.stem = '依据「' + o.kp + '」的相关知识填空：关键结论是 {{1}}。';
+      q.blanks = ['（关键结论）']; q.answer = '（关键结论）';
+    } else if (t === 'T3') {
+      q.type = 'T3'; q.score = 6;
+      q.stem = '结合「' + o.kp + '」的知识，写出你的解题思路或结论。';
+      q.points = [{ label: '用到该知识点的核心概念', k: [String(o.kp).split(/[·、\s]/)[0]] },
+                  { label: '结论正确、表述完整', k: [] }];
+    } else {
+      q.type = 'T4'; q.score = 8;
+      q.stem = '阅读下面材料，完成「' + o.kp + '」相关的各小题。';
+      q.subs = [
+        { type: 'choice', score: 3, stem: '下列说法正确的是（　）',
+          options: ['选项甲', '选项乙', '选项丙', '选项丁'], answer: 'B' },
+        { type: 'short', score: 5, stem: '结合材料说明你的理由。', points: [{ label: '结合材料要点作答', k: [] }] }
+      ];
+    }
+    return q;
+  }
+
+  function readPK(d) {
+    var subj = d.querySelector('#f-subject').value;
+    var grade = d.querySelector('#pk-grade').value;
+    var kw = (d.querySelector('#pk-kw').value || '').trim();
+    /* 任务标题优先用搜索框里的知识点；空则退回 AI 出题面板里填的 */
+    var genKpEl = d.querySelector('#gen-kp');
+    var title = kw || (genKpEl ? (genKpEl.value || '').trim() : '');
+    var qids = [], pool = [];
+    Object.keys(PK.sel).forEach(function (id) {
+      if (!PK.sel[id]) return;
+      if (id.indexOf('_n') === 0) {
+        var g = PK.gens.filter(function (x) { return x.id === id; })[0];
+        if (g) pool.push(g);
+      } else qids.push(id);
+    });
+    var n = qids.length + pool.length;
+    return {
+      subject: subj, grade: grade, kw: kw, qids: qids, pool: pool, n: n,
+      kp: title || (subj + ' · 题库选题'),
+      detail: n + ' 题' + (pool.length ? ' · 含 ' + pool.length + ' 道 AI 新出' : '') +
+              ' · 题库 ' + qids.length + ' 道'
+    };
+  }
+
+  /* ================= 每类任务的专属字段 ================= */
+  function dynFields(kind, x) {
+    x = x || {};
+    var o = x.opt || {};
+
+    if (kind === 'practice' || kind === 'calc') return pkHTML(kind, x);
+
+    if (kind === 'words') {
+      var wbs = pubWbs();
+      if (!wbs.length) {
+        return '<div class="hint" style="margin:0 0 4px">还没有<b>已上架</b>的词书 —— 单词表里把词书点一下「发布」。' +
+          '<button class="btn btn-xs" data-jump="words.html">去处理</button></div>';
+      }
+      var curId = o.wb || wbs[0].id;
+      var b = wbById(curId) || wbs[0];
+      var plan = DB.wordPlan({ bookId: b.id, perDay: perDayOf() });
+      return '<div class="form-grid two">' +
+          '<div class="field"><label>词书<span class="req">*</span> <span class="muted">（只列已上架）</span></label>' +
+            '<select class="sel" id="f-wb">' + wbs.map(function (x2) {
+              return '<option value="' + x2.id + '"' + (x2.id === curId ? ' selected' : '') + '>' + E(x2.name) + '</option>';
+            }).join('') + '</select></div>' +
+          '<div class="field"><label>每天新词数 <span class="muted">（学生在用户端设定，只读）</span></label>' +
+            '<input class="inp" id="f-per" value="' + perDayOf() + ' 词" readonly style="background:var(--surface-2)"></div>' +
+        '</div>' +
+        '<div class="hint">排程结果（到期复习 ' + plan.dueTotal + ' 个 · 可补新词 ' + plan.freshTotal +
+        ' 个）在单词任务区里点「生成今日词单」查看，避免在这里重复配置。</div>';
+    }
+
+    if (kind === 'reading') {
+      var bks = pubBks();
+      if (!bks.length) {
+        return '<div class="hint" style="margin:0 0 4px">书单里还没有<b>已发布</b>的书 —— 去「阅读书单」上传并发布一本。' +
+          '<button class="btn btn-xs" data-jump="books.html">去处理</button></div>';
+      }
+      var cb = o.bookId || bks[0].id;
+      var bb = bkById(cb) || bks[0];
+      return '<div class="form-grid two">' +
+          '<div class="field"><label>书目<span class="req">*</span> <span class="muted">（只列已发布）</span></label>' +
+            '<select class="sel" id="f-book">' + bks.map(function (x2) {
+              return '<option value="' + x2.id + '"' + (x2.id === cb ? ' selected' : '') + '>' + E(x2.title) + '</option>';
+            }).join('') + '</select></div>' +
+          '<div class="field"><label>章节 <span class="muted">（留空 = 接着上次读）</span></label>' +
+            '<input class="inp" id="f-chap" list="f-chaps" value="' + E(o.chapter || '') + '" placeholder="如：第 6 章 · 烈日暴雨">' +
+            '<datalist id="f-chaps">' + (bb.units || []).map(function (u) { return '<option value="' + E(u.t || '') + '">'; }).join('') + '</datalist></div>' +
+        '</div>' +
+        '<div class="hint">学生端读完这一章会自动弹一问（按采分点判分）；留空则从上次读到的位置往下排。</div>';
+    }
+
+    if (kind === 'essay') {
+      return '<div class="form-grid two">' +
+          '<div class="field"><label>作文题<span class="req">*</span></label>' +
+            '<input class="inp" id="f-topic" value="' + E(o.topic || x.kp || '') + '" placeholder="如：My Dream / 那一次，我长大了"></div>' +
+          '<div class="field"><label>体裁 / 字数</label>' +
+            '<input class="inp" id="f-req" value="' + E(o.req || '') + '" placeholder="如：记叙文 · 不少于 600 字"></div>' +
+        '</div>' +
+        '<div class="field"><label>截止时间</label>' +
+          '<input class="inp" id="f-dueat" type="datetime-local" value="' + E(o.dueAt || defDueAt()) + '"></div>' +
+        '<div class="hint">作文交上来后在「作文批改」里 AI 评分、你复核改分；过了截止时间会标红。</div>';
+    }
+
+    /* wrong */
+    return '<div class="form-grid two">' +
+        '<div class="field"><label>范围 <span class="muted">（留空 = 全部待订正）</span></label>' +
+          '<input class="inp" id="f-scope2" value="' + E(o.scope2 || '') + '" placeholder="如：一元二次方程"></div>' +
+        '<div class="field"><label>今天抽几道</label><select class="sel" id="f-n">' +
+          ['3', '5', '8'].map(function (n) { return '<option' + ((o.n || 5) === +n ? ' selected' : '') + '>' + n + '</option>'; }).join('') +
+        '</select></div>' +
+      '</div>' +
+      '<div class="hint">错题本身由系统按遗忘曲线自动排期，这里只调今天抽几道、要不要限定范围。</div>';
+  }
+
+  /* 读回当前类型的专属字段 */
+  function readDyn(kind, d) {
+    function v(id) { var el = d.querySelector('#' + id); return el ? (el.value || '').trim() : ''; }
+    function seg(id) { var el = d.querySelector('#' + id); return el ? (ADMIN.segVal(el) || '') : ''; }
+    var out = { opt: {} };
+
+    if (kind === 'practice' || kind === 'calc') {
+      var r = readPK(d);
+      out.kp = r.kp;
+      out.opt = { n: r.n, grade: r.grade, kw: r.kw, qids: r.qids, pool: r.pool };
+      out.subject = r.subject;
+      out.detail = r.detail;
+      if (kind === 'calc') out.opt.submit = seg('f-sub') || '拍照上传';
+      out.err = r.n ? '' : '至少勾选一道题';
+      return out;
+    }
+
+    if (kind === 'words') {
+      var wbId = v('f-wb');
+      var b = wbById(wbId);
+      var plan = b ? DB.wordPlan({ bookId: wbId, perDay: perDayOf() }) : { stat: {}, dueTotal: 0 };
+      out.opt = { wb: wbId, wbName: b ? b.name : '', unit: '', units: [], perDay: perDayOf(), grade: b ? b.grade : '' };
+      out.kp = (b ? b.name : '未选词书') + ' · 整本推进';
+      out.detail = '到期复习 ' + (plan.dueTotal || 0) + ' 个 · 未学 ' + (plan.stat.fresh || 0) + ' 个 · 去单词任务区生成词单';
+    } else if (kind === 'reading') {
+      var bkId = v('f-book'), chap = v('f-chap');
+      var bk = bkById(bkId);
+      out.opt = { bookId: bkId, bookTitle: bk ? bk.title : '', chapter: chap };
+      out.kp = (bk ? bk.title : '未选书目') + (chap ? ' · ' + chap : '');
+      out.detail = chap ? '读完弹一问' : '接着上次读的位置往下排';
+    } else if (kind === 'essay') {
+      var topic = v('f-topic'), req = v('f-req'), dueAt = v('f-dueat');
+      out.opt = { topic: topic, req: req, dueAt: dueAt };
+      out.kp = topic;
+      out.detail = req || '作文';
+      out.due = dueLabel(dueAt);
+    } else {
+      var sc = v('f-scope2'), n3 = +v('f-n') || 5;
+      out.kp = sc || '全部待订正错题';
+      out.opt = { scope2: sc, n: n3 };
+      out.detail = n3 + ' 道 · 系统按遗忘曲线排期';
+    }
+    return out;
+  }
+
+  /* 科目 / 用时：题目类任务的科目在选题器里（#f-subject 由 pk-bar 提供），其余类型在这里 */
+  function tailFields(kind, x, subject) {
+    x = x || {};
+    var subjInDyn = (kind === 'practice' || kind === 'calc');
+    return '<div class="form-grid' + (subjInDyn ? '' : ' two') + '">' +
+      (subjInDyn ? '' :
+        '<div class="field"><label>科目</label><select class="sel" id="f-subject">' +
+          SUBJECTS.map(function (g) {
+            return '<option' + ((subject || DEF[kind].subject) === g ? ' selected' : '') + '>' + g + '</option>';
+          }).join('') + '</select></div>') +
+      '<div class="field"><label>预计用时（分钟）</label>' +
+        '<input class="inp" id="f-min" type="number" value="' + (x.minutes || DEF[kind].min) + '"></div>' +
+    '</div>';
+  }
+
+  /* 类型专属字段区（切类型时整体重画） */
+  function form(x) {
+    x = x || {};
+    var kind = x.kind || 'practice';
+    return '<div class="form-grid">' +
+      '<div class="field"><label>任务类型<span class="req">*</span></label><div class="seg wrap" id="f-kind">' +
+        Object.keys(KIND).map(function (k) {
+          return '<button type="button" data-val="' + k + '" class="' + (kind === k ? 'on' : '') + '">' + KIND[k].label + '</button>';
+        }).join('') + '</div></div>' +
+      '<div class="f-dyn" id="f-dyn">' + dynFields(kind, x) + '</div>' +
+      '<div id="f-tail">' + tailFields(kind, x, x.subject) + '</div>' +
+      '<div class="field"><label>补充说明 <span class="muted">（学生端能看到这一句）</span></label>' +
+        '<input class="inp" id="f-detail" value="' + E(x.kind ? (x.note || '') : '') + '" placeholder="留空则自动生成，如：10 题 · 约 25 分钟"></div>' +
+      '</div>';
+  }
+
+  function mountDyn(d, kind, x) {
+    if (d.querySelector('#f-diff')) ADMIN.seg('#f-diff');
+    if (d.querySelector('#f-sub')) ADMIN.seg('#f-sub');
+    if (d.querySelector('#pk')) mountPK(d, kind, x);
+
+    var wb = d.querySelector('#f-wb');
+    if (wb) {
+      wb.addEventListener('change', function () {
+        var b = wbById(this.value);
+        var uEl = d.querySelector('#f-unit');
+        var keep = uEl ? uEl.value : '';
+        var dl = d.querySelector('#f-units');
+        if (dl && b) dl.innerHTML = unitsOfWb(b).map(function (u) { return '<option value="' + E(u) + '">'; }).join('');
+        if (uEl) uEl.value = keep;
+      });
+    }
+    var bk = d.querySelector('#f-book');
+    if (bk) {
+      bk.addEventListener('change', function () {
+        var b = bkById(this.value);
+        var dl = d.querySelector('#f-chaps');
+        if (dl && b) dl.innerHTML = (b.units || []).map(function (u) { return '<option value="' + E(u.t || '') + '">'; }).join('');
+      });
+    }
+  }
+
+  function openForm(x, idx) {
+    var isNew = !x;
+    ADMIN.drawer({
+      title: isNew ? '添加任务' : '编辑任务 · ' + (KIND[x.kind] || {}).label,
+      wide: true,
+      body: form(x),
+      foot: '<button class="btn" data-x="no">取消</button>' +
+            '<button class="btn btn-primary" data-x="ok">' + (isNew ? '加入今日任务' : '保存') + '</button>',
+      onMount: function (d) {
+        mountDyn(d, x ? x.kind : 'practice', x || {});
+        /* 切类型：重画专属字段，科目 / 用时跟着换成该类型的默认值 */
+        ADMIN.seg('#f-kind', function (k) {
+          if (!k) return;
+          var keepKp = (d.querySelector('#pk-kw') || d.querySelector('#f-kp') || {}).value || '';
+          var keepTopic = (d.querySelector('#f-topic') || {}).value || '';
+          d.querySelector('#f-dyn').innerHTML = dynFields(k, { opt: {}, kp: keepKp || keepTopic });
+          d.querySelector('#f-tail').innerHTML = tailFields(k, {}, null);
+          if (d.querySelector('#f-subject')) d.querySelector('#f-subject').value = DEF[k].subject;
+          d.querySelector('#f-min').value = DEF[k].min;
+          mountDyn(d, k, {});
+        });
+        d.addEventListener('click', function (e) {
+          var jp = e.target.closest('[data-jump]');
+          if (jp) location.href = jp.getAttribute('data-jump');
+        });
+        d.querySelector('[data-x="no"]').addEventListener('click', ADMIN.closeDrawer);
+        d.querySelector('[data-x="ok"]').addEventListener('click', function () {
+          var t = data();
+          var kind = ADMIN.segVal(d.querySelector('#f-kind')) || 'practice';
+          var r = readDyn(kind, d);
+          if (r.err) { ADMIN.toast(r.err, 'warn'); return; }
+          if (!r.kp) {
+            ADMIN.toast(kind === 'words' ? '请先选一本已上架的词书' : '请填写内容 / 知识点', 'warn');
+            return;
+          }
+          var note = d.querySelector('#f-detail').value.trim();
+          var rec = {
+            id: x ? x.id : 't' + Date.now(), kind: kind,
+            subject: r.subject || d.querySelector('#f-subject').value,
+            minutes: +d.querySelector('#f-min').value || DEF[kind].min,
+            kp: r.kp,
+            detail: note || r.detail,
+            note: note,
+            due: r.due || '',
+            opt: r.opt,
+            done: x ? x.done : false, score: x ? x.score : undefined
+          };
+          rec.title = KIND[kind].label;
+          if (isNew) {
+            /* 单词任务每天只留一条：已存在就更新，不重复叠加 */
+            var dup = -1;
+            if (kind === 'words') t.items.forEach(function (y, i) { if (y.kind === 'words') dup = i; });
+            if (dup >= 0) { t.items[dup] = rec; ADMIN.toast('已更新今天的单词任务'); }
+            else { t.items.push(rec); ADMIN.toast('已加入今日任务'); }
+          } else { t.items[idx] = rec; ADMIN.toast('已保存'); }
+          save(t); ADMIN.closeDrawer(); render();
+        });
+      }
+    });
+  }
+
+  document.getElementById('add-task').addEventListener('click', function () { openForm(null); });
+
+  document.getElementById('list').addEventListener('click', function (e) {
+    var b = e.target.closest('button[data-act]');
+    if (!b) return;
+    var t = data(), i = +b.getAttribute('data-i');
+    if (b.getAttribute('data-act') === 'edit') openForm(t.items[i], i);
+    if (b.getAttribute('data-act') === 'del') {
+      ADMIN.confirm({
+        title: '移除这个任务？', danger: true, ok: '移除',
+        text: '「' + t.items[i].title + ' · ' + t.items[i].kp + '」将从今天学生端的待办里去掉。',
+        onOk: function () { t.items.splice(i, 1); save(t); ADMIN.toast('已移除'); render(); }
+      });
+    }
+  });
+
+  /* ================= 单词区事件 ================= */
+  document.getElementById('wb-goto').addEventListener('click', function () { location.href = 'words.html'; });
+  document.getElementById('wbsel').addEventListener('change', function (e) {
+    if (e.target.id !== 'wb-book') return;
+    wbSel = e.target.value;
+    renderWb();
+  });
+  document.getElementById('wbsel').addEventListener('click', function (e) {
+    if (e.target.closest('[data-gen]')) openPlanDrawer(wbSel);
+  });
+
+  /* ================= 发布：AI 新题在此刻过审入库 ================= */
+  function flushPending(t) {
+    var qb = DB.get('qbank', []);
+    var maxId = 1000;
+    qb.forEach(function (q) { var n = +String(q.id).replace(/\D/g, ''); if (n > maxId) maxId = n; });
+    var added = [];
+    (t.items || []).forEach(function (it) {
+      if (!it.opt || !it.opt.pool || !it.opt.pool.length) return;
+      var newIds = [];
+      it.opt.pool.forEach(function (q) {
+        maxId++;
+        qb.push({
+          id: 'Q-' + maxId, subject: q.subject, type: q.type, kp: q.kp, grade: q.grade || it.opt.grade || '',
+          star: q.star || 2, difficulty: q.difficulty || '中', score: q.score || 3,
+          status: 'approved', conf: 0.9, source: 'AI', by: 'AI · 任务出题', at: Date.now(),
+          stem: q.stem, options: q.options, blanks: q.blanks, answer: q.answer,
+          points: q.points, subs: q.subs, expl: q.expl, used: 0, right: 0
+        });
+        added.push('Q-' + maxId);
+        newIds.push('Q-' + maxId);
+      });
+      it.opt.qids = (it.opt.qids || []).concat(newIds);
+      it.opt.pool = [];
+      it.detail = it.opt.qids.length + ' 题 · 全部已入库';
+    });
+    if (added.length) DB.set('qbank', qb);
+    return added;
+  }
+
+  document.getElementById('publish').addEventListener('click', function () {
+    var t = data();
+    if (!t.items.length) { ADMIN.toast('先添加至少一件任务', 'warn'); return; }
+    var pending = 0;
+    t.items.forEach(function (it) { if (it.opt && it.opt.pool) pending += it.opt.pool.length; });
+    ADMIN.confirm({
+      title: '发布到学生端？', ok: '发布',
+      text: '将把 ' + t.items.length + ' 件任务下发给「' + (stu ? stu.name : '') + '」。' +
+            (pending ? ' 其中 ' + pending + ' 道 AI 新出的题目会自动过审并加入题库。' : ''),
+      note: '发布后学生端「每日任务」页立即可见；之后再改动会提示重新发布。',
+      onOk: function () {
+        var added = flushPending(t);
+        t.published = true; save(t);
+        ADMIN.toast(added.length ? '已发布 · ' + added.length + ' 道新题已过审入库' : '已发布，学生端已可见');
+        render();
+      }
+    });
+  });
+
+  /* ================= AI 建议（按薄弱点配今天这一套） ================= */
+  function pickFromBank(subject, kp, n) {
+    var qb = bankList().filter(function (q) { return q.subject === subject; });
+    var hit = qb.filter(function (q) { return kp && (q.kp.indexOf(kp) >= 0 || kp.indexOf(q.kp) >= 0); });
+    var rest = qb.filter(function (q) { return hit.indexOf(q) < 0; });
+    return hit.concat(rest).slice(0, n).map(function (q) { return q.id; });
+  }
+
+  document.getElementById('ai-sug').innerHTML = I('sparkle') + 'AI 建议';
+  document.getElementById('ai-sug').addEventListener('click', function () {
+    var weak = DB.get('weak', {})[sid] || [];
+    var w1 = weak[0] || { kp: '一元二次方程 · 配方法', subject: '数学' };
+    var w2 = weak[1] || { kp: '过去完成时', subject: '英语' };
+    var wb = pubWbs()[0] || null;
+    var bk = pubBks()[0] || null;
+    var plan = wb ? DB.wordPlan({ bookId: wb.id, perDay: perDayOf() }) : null;
+    var qids1 = pickFromBank(w1.subject, w1.kp, 10);
+    var qids5 = pickFromBank('数学', '有理数', 10);
+    ADMIN.confirm({
+      title: 'AI 建议今日任务', ok: '采用并替换',
+      text: '将根据「' + (stu ? stu.name : '') + '」的薄弱知识点与教材进度，生成 6 件套：' +
+            w1.subject + '题目、单词、阅读、作文、计算、错题复习。当前草稿会被替换。',
+      note: '科目轮换原则：每天主攻 1 科 + 英语单词不断。单词按遗忘曲线排程，题目从题库里挑已入库的。',
+      onOk: function () {
+        save({
+          date: ADMIN.today(), published: false,
+          items: [
+            { id: 'a1', kind: 'practice', title: '每日题目', subject: w1.subject, kp: w1.kp,
+              detail: qids1.length + ' 题 · 题库已入库', minutes: 25, done: false,
+              opt: { n: qids1.length, grade: (stu ? stu.grade : ''), kw: w1.kp, qids: qids1, pool: [] } },
+            { id: 'a2', kind: 'words', title: '每日必备单词', subject: '英语',
+              kp: wb ? wb.name + ' · 整本推进' : '（未选词书）',
+              detail: plan ? '新学 ' + Math.min(perDayOf(), plan.freshTotal) + ' · 复习 ' + plan.dueTotal + ' · 按遗忘曲线排' : '先在单词区生成词单',
+              minutes: 12, done: false,
+              opt: wb ? { wb: wb.id, wbName: wb.name, perDay: perDayOf(),
+                          plan: { fresh: plan.fresh.slice(0, perDayOf()).map(function (w) { return w.id; }),
+                                  due: plan.due.map(function (w) { return w.id; }) } } : {} },
+            { id: 'a3', kind: 'reading', title: '阅读任务', subject: '语文',
+              kp: bk ? bk.title + ' · 下一章' : '（未选书目）',
+              detail: '约 20 分钟 · 读完弹一问', minutes: 20, done: false,
+              opt: bk ? { bookId: bk.id, bookTitle: bk.title, chapter: '' } : {} },
+            { id: 'a4', kind: 'essay', title: '作文', subject: '英语', kp: 'My Dream',
+              detail: '不少于 80 词', minutes: 30, done: false,
+              due: dueLabel(defDueAt()),
+              opt: { topic: 'My Dream', req: '不少于 80 词', dueAt: defDueAt() } },
+            { id: 'a5', kind: 'calc', title: '每日计算', subject: '数学', kp: '有理数 · 混合运算',
+              detail: qids5.length + ' 题 · 拍照上传', minutes: 15, done: false,
+              opt: { n: qids5.length, submit: '拍照上传', grade: (stu ? stu.grade : ''), kw: '有理数', qids: qids5, pool: [] } },
+            { id: 'a6', kind: 'wrong', title: '错题复习', subject: w1.subject, kp: '全部待订正错题',
+              detail: '5 道 · 系统按遗忘曲线排期', minutes: 10, done: false, opt: { scope2: '', n: 5 } }
+          ]
+        });
+        ADMIN.toast('已按薄弱点生成 6 件套（草稿）'); render();
+      }
+    });
+  });
+
+  render();
+})();
+</script>
+</body>
+</html>

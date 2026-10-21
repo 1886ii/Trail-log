@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="light">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#F5F6F8">
+<title>登录 · 学迹管理端</title>
+<link rel="stylesheet" href="style.css?v=20261021c">
+</head>
+<body data-page="auth">
+
+<div class="auth">
+
+  <!-- 桌面：左侧品牌区 -->
+  <section class="auth-side">
+    <h2>把「每天该做什么」<br>变成清清楚楚的几件事</h2>
+    <p>管理端负责发布任务、审题、配书单、看数据；孩子那边只管打开就做。</p>
+    <ul>
+      <li><b>1</b><span>发布今天的题目 / 单词 / 阅读 / 作文 / 计算</span></li>
+      <li><b>2</b><span>AI 出题自动预筛，低置信的才需要你过一眼</span></li>
+      <li><b>3</b><span>孩子做完，掌握度和错题自动回流到这里</span></li>
+      <li><b>4</b><span>周报海报 3:4，一眼看清这一周</span></li>
+    </ul>
+    <p class="note">学迹 · 管理端（原型）· 与用户端数据各自独立</p>
+  </section>
+
+  <!-- 右侧表单 -->
+  <section style="display:flex">
+    <div class="auth-card">
+      <div class="auth-brand">
+        <div class="sb-logo">学</div>
+        <div>
+          <div class="sb-name" style="font-size:16px">学迹</div>
+          <div class="sb-role">管理端</div>
+        </div>
+      </div>
+
+      <h1>欢迎回来</h1>
+      <p class="auth-sub">登录后可以发布任务、审题、看书单与学习数据</p>
+
+      <div class="field" style="margin-bottom:12px">
+        <label for="acc">管理账号</label>
+        <input class="inp" id="acc" type="text" autocomplete="username" placeholder="输入管理账号">
+      </div>
+
+      <div class="field" style="margin-bottom:2px">
+        <label for="pw">密码</label>
+        <div class="input-row">
+          <input class="inp" id="pw" type="password" autocomplete="current-password" placeholder="输入密码">
+          <button class="btn btn-icon" id="eye" type="button" aria-label="显示密码"></button>
+        </div>
+      </div>
+
+      <span class="auth-err" id="err"></span>
+
+      <label class="switch" style="margin:6px 0 16px">
+        <input type="checkbox" id="remember">
+        <span class="track"></span>
+        <span class="sw-txt">记住这台设备</span>
+      </label>
+
+      <button class="btn btn-primary btn-block" id="go" style="height:44px">登录</button>
+
+      <p class="hint" style="text-align:center;margin-top:14px">
+        演示账号 <code>admin</code> · 密码 <code>xueji2026</code>
+      </p>
+    </div>
+  </section>
+
+</div>
+
+<script src="demo.js?v=20261021c"></script>
+<script src="admin.js?v=20261021c"></script>
+<script>
+(function () {
+  var acc  = document.getElementById('acc');
+  var pw   = document.getElementById('pw');
+  var err  = document.getElementById('err');
+  var go   = document.getElementById('go');
+  var eye  = document.getElementById('eye');
+  var rmb  = document.getElementById('remember');
+  var RKEY = 'xjadmin-remember';
+
+  eye.innerHTML = ADMIN.icon('eye');
+
+  /* 「记住这台设备」回填 */
+  try {
+    var r = JSON.parse(localStorage.getItem(RKEY) || 'null');
+    if (r) { acc.value = r.account || ''; pw.value = r.password || ''; rmb.checked = true; }
+  } catch (e) {}
+
+  eye.addEventListener('click', function () {
+    var on = pw.type === 'password';
+    pw.type = on ? 'text' : 'password';
+    eye.innerHTML = ADMIN.icon(on ? 'eyeOff' : 'eye');
+  });
+
+  function fail(msg, target) {
+    err.textContent = msg;
+    target.classList.add('bad');
+    target.style.borderColor = 'var(--danger)';
+    target.style.boxShadow = '0 0 0 3px var(--danger-soft)';
+    setTimeout(function () {
+      target.style.borderColor = '';
+      target.style.boxShadow = '';
+    }, 1500);
+  }
+  function clearErr() { err.textContent = ''; }
+  acc.addEventListener('input', clearErr);
+  pw.addEventListener('input', clearErr);
+
+  function submit() {
+    clearErr();
+    if (!acc.value.trim()) return fail('请输入管理账号', acc);
+    if (!pw.value) return fail('请输入密码', pw);
+    if (pw.value.length < 6) return fail('密码至少 6 位', pw);
+
+    go.disabled = true;
+    go.textContent = '登录中…';
+    setTimeout(function () {
+      if (pw.value === '000000') {
+        go.disabled = false;
+        go.textContent = '登录';
+        return fail('账号或密码不正确', pw);
+      }
+      if (rmb.checked) {
+        try { localStorage.setItem(RKEY, JSON.stringify({ account: acc.value.trim(), password: pw.value })); } catch (e) {}
+      } else {
+        try { localStorage.removeItem(RKEY); } catch (e) {}
+      }
+      go.style.background = 'var(--ok)';
+      go.style.borderColor = 'var(--ok)';
+      go.textContent = '登录成功，正在进入…';
+      ADMIN.setSession({
+        account: acc.value.trim() || 'admin',
+        name: '妈妈',
+        role: 'admin',
+        loginAt: Date.now()
+      });
+      setTimeout(function () { location.replace('dashboard.html'); }, 420);
+    }, 700);
+  }
+
+  go.addEventListener('click', submit);
+  [acc, pw].forEach(function (el) {
+    el.addEventListener('keydown', function (e) { if (e.key === 'Enter') submit(); });
+  });
+  acc.focus();
+})();
+</script>
+</body>
+</html>

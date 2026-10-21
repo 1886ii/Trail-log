@@ -1,0 +1,831 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="light">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#F5F6F8">
+<title>我的记录 · 学迹</title>
+<script>document.documentElement.classList.add('js-on');</script>
+<link rel="stylesheet" href="style.css?v=20261021a">
+</head>
+<body data-page="myposts">
+
+<div class="app">
+<main class="main">
+
+  <header class="topbar" id="topbar"></header>
+
+  <div class="content content-wide">
+
+    <!-- ============ 时光隧道：每条记录是一张照片，越旧越深处 ============ -->
+    <section class="section reveal" id="sky-sec">
+      <div class="sky-panel" id="tun-panel">
+        <div class="sky-canvas-wrap">
+          <canvas id="tun-cv"></canvas>
+        </div>
+        <div class="sky-head">
+          <span class="sky-title">✦ 我的时光隧道</span>
+          <span class="sky-legend">
+            <span><i style="background:#6C8DFF"></i>图文</span>
+            <span><i style="background:#3DD68C"></i>笔记</span>
+            <span><i style="background:#FFB65C"></i>随感</span>
+          </span>
+        </div>
+        <div class="tun-progress"><div class="tun-bar" id="tun-bar"></div></div>
+        <div class="tun-pos" id="tun-pos"></div>
+        <button class="sky-reset" id="tun-latest" type="button" title="回到最新一条">⤓ 最新</button>
+      </div>
+
+      <div class="mp-stats-row" id="mp-stats-row"></div>
+    </section>
+
+    <!-- ============ 记录列表 ============ -->
+    <section class="section reveal">
+      <div class="mp-list-head">
+        <h2 class="section-title">全部记录 <span class="count" id="mp-count"></span></h2>
+        <div class="tag-opts mp-tabs" id="mp-tabs">
+          <button class="tag-opt active" type="button" data-f="全部">全部</button>
+          <button class="tag-opt" type="button" data-f="图文记录">图文记录</button>
+          <button class="tag-opt" type="button" data-f="学习笔记">学习笔记</button>
+          <button class="tag-opt" type="button" data-f="随感">随感</button>
+        </div>
+      </div>
+
+      <div class="mp-list2" id="mp-list"></div>
+
+      <div class="panel mp-empty" id="mp-empty" hidden>
+        <p class="mp-empty-title">隧道还没有灯</p>
+        <p class="mp-empty-sub">发布第一条记录，点亮时光隧道的起点。</p>
+        <a class="btn-brand" href="post.html">去发布一条</a>
+      </div>
+    </section>
+
+  </div>
+</main>
+</div>
+
+<!-- ============ 照片回看弹层 ============ -->
+<div class="tun-modal" id="tun-modal" hidden>
+  <div class="tun-mcard">
+    <button class="tun-mclose" id="tun-mclose" type="button" title="关闭">✕</button>
+    <div class="tun-mimg" id="tun-mimg"></div>
+    <div class="tun-mbody">
+      <p class="tun-mtitle" id="tun-mtitle"></p>
+      <p class="tun-mmeta" id="tun-mmeta"></p>
+      <button class="tun-mvis" id="tun-mvis" type="button" title="点击修改可见范围"></button>
+      <p class="tun-msnip" id="tun-msnip"></p>
+      <a class="btn-brand" href="home.html">去首页查看完整记录</a>
+    </div>
+  </div>
+</div>
+
+<!-- ============ 可见范围设置面板 ============ -->
+<div class="vis-sheet" id="vis-sheet" hidden>
+  <div class="vis-card">
+    <p class="vis-head">谁可以看这条记录</p>
+    <p class="vis-sub" id="vis-sub"></p>
+    <div class="vis-list" id="vis-list"></div>
+    <button class="vis-cancel" id="vis-cancel" type="button">取消</button>
+  </div>
+</div>
+
+<script src="fx.js?v=20261021a"></script>
+<script src="app.js?v=20261021a"></script>
+<script>
+/* ============================================================
+   我的记录 = 时光隧道（3D 照片隧道） + 类型筛选列表
+   数据源与首页共用 localStorage['xj-feed']
+   隧道：最新记录在隧道口，越旧越深处；滚轮/拖拽穿梭，点照片回看。
+   纯手写针孔透视投影，不引任何 3D 库。
+   ============================================================ */
+var TAGS  = ['全部', '图文记录', '学习笔记', '随感'];
+var TC    = { '图文记录': '#6C8DFF', '学习笔记': '#3DD68C', '随感': '#FFB65C' };
+var curFilter = '全部';
+
+function loadPosts() {
+  try { return JSON.parse(localStorage.getItem('xj-feed') || '[]'); }
+  catch (e) { return []; }
+}
+/* 唯一的内存副本：列表与隧道共用同一批对象引用，
+   改可见范围时两边同时生效（不会出现「列表改了隧道没改」） */
+var ALL = [];
+function reloadAll() { ALL = loadPosts(); return ALL; }
+function saveAll() {
+  try { localStorage.setItem('xj-feed', JSON.stringify(ALL)); return true; }
+  catch (e) { return false; }
+}
+function htmlToText(html) {
+  var d = document.createElement('div');
+  d.innerHTML = html || '';
+  d.querySelectorAll('img').forEach(function (im) { im.remove(); });
+  return (d.textContent || '').replace(/\s+/g, ' ').trim();
+}
+function imgCount(p) {
+  if (p.imgs && p.imgs.length) return p.imgs.length;
+  var d = document.createElement('div');
+  d.innerHTML = p.html || '';
+  return d.querySelectorAll('img').length;
+}
+function firstImg(p) {
+  if (p.noCardImgs) return '';
+  if (p.imgs && p.imgs.length && typeof p.imgs[0] === 'string') return p.imgs[0];
+  if (p.cover) return p.cover;
+  var m = /<img[^>]*\ssrc="([^"]+)"/i.exec(p.html || '');
+  return m ? m[1] : '';
+}
+var TAGCHAR = { '图文记录': '图', '学习笔记': '笔', '随感': '随' };
+function esc(s) {
+  return String(s == null ? '' : s)
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+function pidOf(p, i) { return p.id != null ? String(p.id) : 'i' + i; }
+
+/* ============================================================
+   可见范围（与 post.html「谁可以看」同一套取值）
+   仅自己 / 家人可见 / 公开 —— 存 p.vis，缺省即「仅自己」
+   ============================================================ */
+var VIS = [
+  { v: '仅自己',   ico: '🔒', cls: 'me',  desc: '只有你自己能看到这条记录' },
+  { v: '家人可见', ico: '👪', cls: 'fam', desc: '家长端可见，其他人看不到' },
+  { v: '公开',     ico: '🌐', cls: 'pub', desc: '所有人都能看到这条记录' }
+];
+function visMeta(v) {
+  for (var i = 0; i < VIS.length; i++) if (VIS[i].v === v) return VIS[i];
+  return VIS[0];
+}
+function visOf(p) { return (p && p.vis) || '仅自己'; }
+
+/* 按 pid 找到 ALL 里的记录（pid 规则与列表/隧道一致：有 id 用 id，否则用下标） */
+function findPost(pid) {
+  for (var i = 0; i < ALL.length; i++) {
+    if (pidOf(ALL[i], i) === String(pid)) return ALL[i];
+  }
+  return null;
+}
+
+/* ---------- 统计行 ---------- */
+function renderStats(posts) {
+  var words = 0, imgs = 0, likes = 0;
+  posts.forEach(function (p) {
+    words += htmlToText(p.html).length;
+    imgs  += imgCount(p);
+    likes += p.likes || 0;
+  });
+  document.getElementById('mp-stats-row').innerHTML =
+    stat(posts.length, '条记录') + stat(words, '写的字') +
+    stat(imgs, '张图片') + stat(likes, '次被点赞');
+  function stat(n, label) {
+    return '<div class="mp-stat"><b>' + n + '</b><span>' + label + '</span></div>';
+  }
+}
+
+/* ---------- 列表 ---------- */
+function cardHTML(p, i) {
+  var text = htmlToText(p.html);
+  var nImg = imgCount(p);
+  var vm = visMeta(visOf(p));
+  var title = p.title ? '<p class="post-title-line">' + esc(p.title) + '</p>' : '';
+  var snip = text
+    ? '<p class="mp-snip">' + esc(text) + '</p>'
+    : (nImg ? '<p class="mp-snip mp-snip-onlyimg">📷 图片记录</p>' : '');
+  return '<article class="post mp-card" data-pid="' + pidOf(p, i) + '" title="去首页查看完整记录">' +
+    '<div class="mp-meta">' +
+      '<span class="chip brand">' + esc(p.tag || '图文记录') + '</span>' +
+      '<span>' + esc(p.time || '') + '</span>' +
+      '<button class="vis-chip ' + vm.cls + '" type="button" data-vis-pid="' + pidOf(p, i) + '" ' +
+        'title="点击修改可见范围"><span class="vis-chip-i">' + vm.ico + '</span>' + esc(vm.v) + '</button>' +
+    '</div>' +
+    title + snip +
+    '<div class="mp-stats">' +
+      '<span>♥ ' + (p.likes || 0) + '</span>' +
+      '<span>💬 ' + ((p.cmts && p.cmts.length) || 0) + '</span>' +
+      (nImg ? '<span>📷 ' + nImg + ' 图</span>' : '') +
+    '</div>' +
+  '</article>';
+}
+
+function render() {
+  var posts = ALL;
+  var list = document.getElementById('mp-list');
+  var empty = document.getElementById('mp-empty');
+
+  renderStats(posts);
+
+  var shown = curFilter === '全部'
+    ? posts
+    : posts.filter(function (p) { return (p.tag || '图文记录') === curFilter; });
+
+  document.getElementById('mp-count').textContent =
+    '· 共 ' + posts.length + ' 条' + (curFilter === '全部' ? '' : ' · ' + curFilter + ' ' + shown.length + ' 条');
+
+  if (!posts.length) {
+    document.getElementById('tun-panel').hidden = true;
+    document.getElementById('mp-stats-row').hidden = true;
+    list.innerHTML = '';
+    empty.hidden = false;
+    return;
+  }
+  empty.hidden = true;
+  list.innerHTML = shown.length
+    ? shown.map(cardHTML).join('')
+    : '<div class="panel mp-empty"><p class="mp-empty-title">这个类型下还没有记录</p>' +
+      '<p class="mp-empty-sub">换个类型看看，或去发布一条新的。</p></div>';
+}
+
+/* ============================================================
+   时光隧道 · 3D
+   相机沿隧道中轴停在「最新」一端，travel∈[0,maxTravel] 表示
+   已向深处（旧）穿梭的距离。照片卡片按黄金角螺旋挂在隧道壁上，
+   billboard 方式面向相机；深度雾 + 尽头光 + 飞掠粒子。
+   ============================================================ */
+function setupTunnel() {
+  var posts = ALL;
+  if (!posts.length) return;
+  var chrono = posts.slice().sort(function (a, b) { return (a.id || 0) - (b.id || 0); });
+  var n = chrono.length;
+
+  var cv   = document.getElementById('tun-cv');
+  var wrap = document.getElementById('tun-panel');
+  var ctx  = cv.getContext('2d');
+  var bar  = document.getElementById('tun-bar');
+  var posEl = document.getElementById('tun-pos');
+  var latestBtn = document.getElementById('tun-latest');
+
+  var W = 0, H = 0, CX = 0, CY = 0, UNIT = 230;
+  var FOCAL = 2.4, SPACING = 3.4, RX = 1.14, RY = 0.60;
+  var maxTravel = (n - 1) * SPACING;
+
+  /* URL 带 ?snap：跳过开场动画直接停在最新（无头截图用）；?deep：停在最深处 */
+  var snapMode = /snap/.test(location.search);
+  var travel = snapMode ? 0 : maxTravel;   /* 开场：从最深处滑向最新 */
+  var target = 0;
+  if (/deep/.test(location.search)) { travel = maxTravel; target = maxTravel; }
+  var vT = 0;                              /* 拖拽惯性 */
+  var dragging = false, moved = 0, lastX = 0, lastY = 0;
+  var hoverI = -1, rects = [], lastKey = -1;
+  var rt = travel;                         /* 本帧渲染用的 travel（含呼吸浮动） */
+
+  /* 稳定哈希：粒子分布每次打开完全一致 */
+  function hash(str) {
+    var h = 2166136261; str = String(str);
+    for (var i = 0; i < str.length; i++) { h ^= str.charCodeAt(i); h = Math.imul(h, 16777619); }
+    return ((h >>> 0) % 1000000) / 1000000;
+  }
+  function rgba(hex, a) {
+    if (hex.charAt(0) !== '#') return hex;
+    var nv = parseInt(hex.slice(1), 16);
+    return 'rgba(' + (nv >> 16 & 255) + ',' + (nv >> 8 & 255) + ',' + (nv & 255) + ',' + Math.max(0, Math.min(1, a)) + ')';
+  }
+
+  /* 卡片数据：时间正序（i=0 最旧）。photo = 封面或正文首图 */
+  var cards = chrono.map(function (p, i) {
+    var text = htmlToText(p.html);
+    return {
+      p: p, pid: pidOf(p, i),
+      tag: p.tag || '图文记录',
+      color: TC[p.tag] || '#B9C4FF',
+      title: (p.title || text.slice(0, 18) || (imgCount(p) ? '图片记录' : '一条记录')),
+      text: text,
+      photo: firstImg(p), img: null,
+      date: p.time || ''
+    };
+  });
+  cards.forEach(function (c) {
+    if (!c.photo) return;
+    var im = new Image();
+    im.onload = function () { c.img = im; };
+    im.src = c.photo;
+    if (im.complete && im.naturalWidth) c.img = im;
+  });
+
+  /* 螺旋挂点：黄金角分布，最新（i=n-1）z=0 在隧道口 */
+  cards.forEach(function (c, i) {
+    var a = i * 2.39996 + 0.7;
+    c.ax = Math.cos(a) * RX;
+    c.ay = Math.sin(a) * RY;
+    c.z = (n - 1 - i) * SPACING;
+  });
+
+  /* 飞掠粒子：布满整条隧道，穿梭时产生速度感 */
+  var dust = [];
+  var span = maxTravel + 80;
+  for (var k = 0; k < 340; k++) {
+    dust.push({
+      x: (hash('dx' + k) * 2 - 1) * 3.0,
+      y: (hash('dy' + k) * 2 - 1) * 2.0,
+      wz: hash('dz' + k) * span,
+      r: 0.5 + hash('dr' + k) * 1.25,
+      a: 0.13 + hash('da' + k) * 0.5,
+      warm: hash('dw' + k) > 0.86
+    });
+  }
+
+  /* 联调 / 测试钩子 */
+  window.__tun = {
+    n: n, maxTravel: maxTravel,
+    travel: function () { return travel; },
+    target: function () { return target; },
+    snap: function () { travel = target; },
+    go: function (t) { target = Math.max(0, Math.min(maxTravel, t)); travel = target; },
+    rects: function () { return rects; },
+    hover: function () { return hoverI; },
+    dust: function () { return dust.length; }
+  };
+
+  /* ── 投影：针孔透视，billboard ── */
+  function depthOf(c) { return c.z - rt + SPACING; }
+  function projS(d, ax, ay) {
+    var s = FOCAL / Math.max(0.28, d);
+    return { x: CX + ax * s * UNIT, y: CY + ay * s * UNIT, s: s };
+  }
+  /* 圆角路径：rT 顶部圆角，rB 底部圆角（顺时针完整四角） */
+  function pathR(x, y, w, h, rT, rB) {
+    rT = Math.min(rT, w / 2, h); rB = Math.min(rB == null ? rT : rB, w / 2, h);
+    ctx.beginPath();
+    ctx.moveTo(x + rT, y);
+    ctx.arcTo(x + w, y, x + w, y + h, rT);
+    ctx.lineTo(x + w, y + h - rB);
+    ctx.arcTo(x + w, y + h, x, y + h, rB);
+    ctx.lineTo(x + rB, y + h);
+    ctx.arcTo(x, y + h, x, y + h - rB, rB);
+    ctx.lineTo(x, y + rT);
+    ctx.arcTo(x, y, x + w, y, rT);
+    ctx.closePath();
+  }
+
+  /* ── 一张照片卡片 ── */
+  function drawCard(c, d, i) {
+    var fog = Math.max(0, Math.min(1, 1.35 - d / 15));
+    /* 贴脸的卡（相机正穿过它）：推向隧道壁外并渐隐 → 「掠过」而不是糊脸 */
+    var graze = d < SPACING ? Math.max(0, (d - 0.9) / (SPACING - 0.9)) : 1;
+    fog *= graze;
+    if (fog <= 0.02) return;
+    /* 舞台吸中：最近一张收向中轴，其余留在隧道壁上（留一点偏移不挡尽头的光） */
+    var focus = Math.max(0.28, Math.min(1, (d - SPACING * 0.8) / (SPACING * 1.6)));
+    var side = c.ax >= 0 ? 1 : -1;
+    var pr = projS(d, c.ax * focus + (1 - graze) * 1.3 * side, c.ay * focus);
+    var s = pr.s;
+    var hov = (hoverI === i);
+    var boost = W < 700 ? 1.32 : 1;
+    var cw = 1.24 * UNIT * s * (hov ? 1.07 : 1) * boost;
+    var ih = cw * 0.72;
+    var bh = Math.max(11, cw * 0.155);
+    var x = pr.x, yC = pr.y;
+    var top = yC - (ih + bh) / 2;
+    var rad = Math.max(3, cw * 0.075);
+    var hasImg = !!(c.img && c.img.complete && c.img.naturalWidth);
+
+    ctx.save();
+    ctx.globalAlpha = fog;
+
+    /* 投影阴影 + 白底卡 */
+    ctx.shadowColor = 'rgba(2,5,18,' + (0.55 * fog).toFixed(3) + ')';
+    ctx.shadowBlur = 26 * s * boost;
+    ctx.shadowOffsetY = 10 * s * boost;
+    pathR(x - cw / 2, top, cw, ih + bh, rad, rad);
+    ctx.fillStyle = 'rgba(251,252,255,.98)';
+    ctx.fill();
+    ctx.shadowColor = 'transparent'; ctx.shadowBlur = 0; ctx.shadowOffsetY = 0;
+
+    /* 图片区（上圆角 clip → cover 居中裁切） */
+    ctx.save();
+    pathR(x - cw / 2, top, cw, ih, rad, 0);
+    ctx.clip();
+    if (hasImg) {
+      var im = c.img;
+      var sc = Math.max(cw / im.naturalWidth, ih / im.naturalHeight);
+      var dw = im.naturalWidth * sc, dh = im.naturalHeight * sc;
+      ctx.drawImage(im, x - dw / 2, top + (ih - dh) / 2, dw, dh);
+      /* 近处照片：下缘渐变 + 标题 */
+      if (d < SPACING * 2.8 && cw > 130) {
+        var tg = ctx.createLinearGradient(0, top + ih * 0.60, 0, top + ih);
+        tg.addColorStop(0, 'rgba(6,9,24,0)');
+        tg.addColorStop(1, 'rgba(6,9,24,.72)');
+        ctx.fillStyle = tg;
+        ctx.fillRect(x - cw / 2, top, cw, ih);
+        ctx.fillStyle = 'rgba(255,255,255,.96)';
+        ctx.font = '600 ' + Math.max(10, cw * 0.085).toFixed(1) +
+          'px -apple-system, "PingFang SC", "Microsoft YaHei", system-ui, sans-serif';
+        ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
+        ctx.fillText(c.title.slice(0, 16), x - cw / 2 + cw * 0.06, top + ih - cw * 0.055);
+      }
+    } else {
+      /* 无图：类型色渐变 + 类型字 + 右下大水印 */
+      var og = ctx.createLinearGradient(x, top, x, top + ih);
+      og.addColorStop(0, rgba(c.color, 0.92));
+      og.addColorStop(1, rgba(c.color, 0.45));
+      ctx.fillStyle = og;
+      ctx.fillRect(x - cw / 2, top, cw, ih);
+      if (cw > 40) {
+        ctx.font = '600 ' + (cw * 0.26).toFixed(1) +
+          'px -apple-system, "PingFang SC", "Microsoft YaHei", system-ui, sans-serif';
+        ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+        ctx.fillStyle = 'rgba(255,255,255,.94)';
+        ctx.fillText(TAGCHAR[c.tag] || '记', x, top + ih * 0.46);
+        /* 大水印字：撑质感 */
+        ctx.font = '700 ' + (cw * 0.72).toFixed(1) +
+          'px -apple-system, "PingFang SC", "Microsoft YaHei", system-ui, sans-serif';
+        ctx.fillStyle = 'rgba(255,255,255,.14)';
+        ctx.fillText(TAGCHAR[c.tag] || '记', x + cw * 0.26, top + ih * 0.86);
+        /* 顶部类型小标 */
+        ctx.font = '500 ' + Math.max(8, cw * 0.062).toFixed(1) +
+          'px -apple-system, "PingFang SC", "Microsoft YaHei", system-ui, sans-serif';
+        ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
+        ctx.fillStyle = 'rgba(255,255,255,.85)';
+        ctx.fillText(c.tag, x - cw / 2 + cw * 0.06, top + cw * 0.1);
+      }
+    }
+
+    /* 可见范围角标（右上）：仅自己 / 家人可见 / 公开 —— 一眼看出谁能看 */
+    if (cw > 104) {
+      var vv = visOf(c.p);
+      var vcol = vv === '公开' ? '#B7D2FF' : (vv === '家人可见' ? '#9FE7C0' : '#C9D1E8');
+      var fs = Math.max(8, cw * 0.058);
+      ctx.font = '600 ' + fs.toFixed(1) +
+        'px -apple-system, "PingFang SC", "Microsoft YaHei", system-ui, sans-serif';
+      var tw = ctx.measureText(vv).width;
+      var pw = tw + fs * 1.5, ph = fs * 1.85;
+      var px = x + cw / 2 - pw - cw * 0.045, py = top + cw * 0.045;
+      ctx.fillStyle = 'rgba(6,9,24,.6)';
+      pathR(px, py, pw, ph, ph / 2, ph / 2);
+      ctx.fill();
+      ctx.fillStyle = vcol;
+      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.fillText(vv, px + pw / 2, py + ph / 2 + 0.5);
+    }
+    ctx.restore();
+
+    /* 底部信息条：日期 + 类型点 */
+    var yB = top + ih + bh / 2;
+    ctx.fillStyle = 'rgba(44,52,92,.86)';
+    ctx.font = '500 ' + Math.max(8, bh * 0.46).toFixed(1) +
+      'px -apple-system, "Segoe UI", system-ui, sans-serif';
+    ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+    ctx.fillText(c.date, x - cw / 2 + cw * 0.055, yB + 0.5);
+    ctx.fillStyle = c.color;
+    ctx.beginPath();
+    ctx.arc(x + cw / 2 - cw * 0.055, yB, Math.max(1.6, bh * 0.17), 0, 6.283);
+    ctx.fill();
+
+    /* 悬停：亮边 */
+    if (hov) {
+      pathR(x - cw / 2, top, cw, ih + bh, rad, rad);
+      ctx.lineWidth = Math.max(1.2, cw * 0.012);
+      ctx.strokeStyle = 'rgba(255,255,255,.95)';
+      ctx.stroke();
+    }
+    ctx.restore();
+
+    rects.push({ i: i, x: x - cw / 2, y: top, w: cw, h: ih + bh });
+  }
+
+  function resize() {
+    var dpr = window.devicePixelRatio || 1;
+    W = wrap.clientWidth || 600;
+    H = cv.clientHeight || 560;
+    cv.width = W * dpr; cv.height = H * dpr;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    CX = W / 2; CY = H * 0.48;
+    UNIT = Math.min(W * 0.34, H * 0.44);
+    syncInset();
+  }
+  /* 面板全宽出血后，控件与内容区左边界对齐 */
+  function syncInset() {
+    var host = document.querySelector('.content');
+    if (!host) return;
+    var pr = wrap.getBoundingClientRect();
+    var hr = host.getBoundingClientRect();
+    var pad = parseFloat(getComputedStyle(host).paddingLeft) || 0;
+    var inset = Math.max(12, Math.round(hr.left + pad - pr.left));
+    wrap.style.setProperty('--sky-inset', inset + 'px');
+  }
+
+  var lastT = 0;
+  function draw(now) {
+    var dt = lastT ? Math.min(0.05, (now - lastT) / 1000) : 0.016;
+    lastT = now;
+
+    /* ── 相机推进 ── */
+    if (!dragging) {
+      travel += (target - travel) * 0.078;
+      travel += vT; vT *= 0.94;
+      if (Math.abs(target - travel) < 0.001 && !vT) travel = target;
+    }
+    travel = Math.max(0, Math.min(maxTravel, travel));
+    rt = travel + Math.sin(now / 2600) * 0.035;   /* 呼吸浮动 */
+
+    ctx.clearRect(0, 0, W, H);
+    ctx.globalCompositeOperation = 'lighter';
+
+    /* 深空中心光：隧道尽头方向的底光 */
+    var cg = ctx.createRadialGradient(CX, CY, 0, CX, CY, Math.max(W, H) * 0.62);
+    cg.addColorStop(0, 'rgba(120,150,255,.20)');
+    cg.addColorStop(0.4, 'rgba(90,116,230,.09)');
+    cg.addColorStop(1, 'rgba(0,0,0,0)');
+    ctx.fillStyle = cg; ctx.fillRect(0, 0, W, H);
+
+    /* 尽头光：隧道最深处的出口，随穿梭靠近变大 */
+    var dzE = maxTravel + SPACING * 4 - rt + SPACING;
+    var sE = FOCAL / Math.max(0.3, dzE);
+    var rE = Math.max(56, UNIT * sE * 4.6) * (0.92 + 0.08 * Math.sin(now / 1900));
+    var eg = ctx.createRadialGradient(CX, CY, 0, CX, CY, rE);
+    eg.addColorStop(0, 'rgba(238,244,255,.85)');
+    eg.addColorStop(0.22, 'rgba(190,210,255,.34)');
+    eg.addColorStop(0.58, 'rgba(120,150,255,.12)');
+    eg.addColorStop(1, 'rgba(0,0,0,0)');
+    ctx.fillStyle = eg;
+    ctx.fillRect(CX - rE, CY - rE, rE * 2, rE * 2);
+
+    /* 隧道深处的柔和雾带：只留一层薄光暗示纵深，不画硬边框 */
+    (function () {
+      for (var k = 0; k < 9; k++) {
+        var dz = k * SPACING * 1.6 - rt + SPACING * 1.4;
+        if (dz < 1) continue;
+        var s = FOCAL / dz;
+        var rr = 2.05 * s * UNIT;
+        var a = Math.max(0.012, Math.min(0.10, 0.16 - k * 0.017));
+        var bg = ctx.createRadialGradient(CX, CY, rr * 0.55, CX, CY, rr);
+        bg.addColorStop(0, 'rgba(0,0,0,0)');
+        bg.addColorStop(0.75, 'rgba(130,160,255,' + a.toFixed(3) + ')');
+        bg.addColorStop(1, 'rgba(0,0,0,0)');
+        ctx.fillStyle = bg;
+        ctx.fillRect(CX - rr, CY - rr, rr * 2, rr * 2);
+      }
+    })();
+
+    /* 飞掠粒子：身后与太远的跳过 */
+    dust.forEach(function (d) {
+      var dz = d.wz - rt + SPACING;
+      if (dz < 0.34 || dz > 58) return;
+      var pr = projS(dz, d.x, d.y);
+      var a = d.a * Math.max(0, Math.min(1, 1.5 - dz / 26)) * 1.35;
+      ctx.fillStyle = rgba(d.warm ? '#FFE3B8' : '#DCE6FF', a);
+      ctx.beginPath();
+      ctx.arc(pr.x, pr.y, Math.max(0.6, d.r * pr.s * 1.8), 0, 6.283);
+      ctx.fill();
+    });
+
+    /* 照片卡片：远的先画 */
+    ctx.globalCompositeOperation = 'source-over';
+    rects = [];
+    var order = [];
+    cards.forEach(function (c, i) {
+      var d = depthOf(c);
+      if (d > 46) return;
+      order.push({ c: c, d: d, i: i });
+    });
+    order.sort(function (a, b) { return b.d - a.d; });
+    order.forEach(function (o) { drawCard(o.c, o.d, o.i); });
+
+    ctx.globalCompositeOperation = 'source-over';
+
+    /* 进度 UI：目标值变化才写 DOM */
+    var key = Math.round(target * 4);
+    if (key !== lastKey) {
+      lastKey = key;
+      var idx = Math.max(0, Math.min(n - 1, n - 1 - Math.round(target / SPACING)));
+      bar.style.width = (maxTravel ? (target / maxTravel * 100) : 0).toFixed(1) + '%';
+      posEl.textContent = '滚动 / 上下拖拽穿梭 · 点一张照片回看 · 第 ' + (idx + 1) + ' / ' + n + ' 张';
+    }
+
+    requestAnimationFrame(draw);
+  }
+
+  /* ── 拾取 ── */
+  function pick(mx, my) {
+    var best = -1, bd = 1e9;
+    rects.forEach(function (r) {
+      if (mx < r.x || mx > r.x + r.w || my < r.y || my > r.y + r.h) return;
+      var dx = mx - (r.x + r.w / 2), dy = my - (r.y + r.h / 2);
+      var dd = dx * dx + dy * dy;
+      if (dd < bd) { bd = dd; best = r.i; }
+    });
+    return best;
+  }
+
+  /* ── 拖拽穿梭（上滑 = 向深处前进） ── */
+  cv.addEventListener('pointerdown', function (e) {
+    dragging = true; moved = 0;
+    lastX = e.clientX; lastY = e.clientY;
+    vT = 0;
+    cv.classList.add('dragging');
+    cv.setPointerCapture(e.pointerId);
+  });
+  cv.addEventListener('pointermove', function (e) {
+    var rect = cv.getBoundingClientRect();
+    var mx = e.clientX - rect.left, my = e.clientY - rect.top;
+    if (dragging) {
+      var dx = e.clientX - lastX, dy = e.clientY - lastY;
+      lastX = e.clientX; lastY = e.clientY;
+      moved += Math.abs(dx) + Math.abs(dy);
+      var step = (-dy) * SPACING * 0.0042 + (-dx) * SPACING * 0.0016;
+      target = Math.max(0, Math.min(maxTravel, target + step));
+      vT = step * 0.55;
+      hoverI = -1;
+      return;
+    }
+    hoverI = pick(mx, my);
+    cv.style.cursor = hoverI >= 0 ? 'pointer' : '';
+  });
+  function endDrag(e) {
+    if (!dragging) return;
+    dragging = false;
+    cv.classList.remove('dragging');
+    /* 没怎么动 = 点击：打开回看 */
+    if (moved < 6) {
+      var rect = cv.getBoundingClientRect();
+      var hi = pick(e.clientX - rect.left, e.clientY - rect.top);
+      if (hi >= 0) openModal(cards[hi]);
+    }
+  }
+  cv.addEventListener('pointerup', endDrag);
+  cv.addEventListener('pointercancel', function () {
+    dragging = false; cv.classList.remove('dragging');
+  });
+  cv.addEventListener('pointerleave', function () {
+    if (!dragging) { hoverI = -1; cv.style.cursor = ''; }
+  });
+
+  /* 滚轮：向下 = 向深处（旧）穿梭 */
+  cv.addEventListener('wheel', function (e) {
+    e.preventDefault();
+    target = Math.max(0, Math.min(maxTravel, target + e.deltaY * 0.0016 * SPACING));
+    vT = 0;
+  }, { passive: false });
+
+  if (latestBtn) latestBtn.addEventListener('click', function () { target = 0; vT = 0; });
+
+  window.addEventListener('resize', resize);
+  window.addEventListener('load', syncInset);
+  resize();
+
+  /* 无头/虚拟时钟兜底：600ms 后把状态写进 DOM，供 dump-dom 断言 */
+  setTimeout(function () {
+    document.body.setAttribute('data-tun',
+      'n=' + n + ';travel=' + Math.round(travel) + ';rects=' + rects.length +
+      ';dust=' + dust.length + ';imgs=' + cards.filter(function (c) { return !!c.img; }).length);
+  }, 600);
+
+  requestAnimationFrame(draw);
+}
+
+/* ---------- 回看弹层 ---------- */
+var modal = document.getElementById('tun-modal');
+var curCard = null;
+function renderModalVis() {
+  if (!curCard) return;
+  var vm = visMeta(visOf(curCard.p));
+  var el = document.getElementById('tun-mvis');
+  el.dataset.visPid = curCard.pid;
+  el.innerHTML = '<span>' + vm.ico + '</span>可见范围：<b>' + vm.v + '</b><span class="tun-mvis-go">修改 ›</span>';
+}
+function openModal(c) {
+  curCard = c;
+  document.getElementById('tun-mimg').innerHTML =
+    (c.photo && c.img) ? '<img src="' + c.photo + '" alt="">' : '';
+  document.getElementById('tun-mtitle').textContent = c.p.title || c.title;
+  document.getElementById('tun-mmeta').textContent =
+    (c.tag || '') + (c.date ? ' · ' + c.date : '') +
+    ' · ♥ ' + (c.p.likes || 0) + ' · 💬 ' + ((c.p.cmts && c.p.cmts.length) || 0);
+  var t = c.text || '';
+  document.getElementById('tun-msnip').textContent = t ? (t.length > 120 ? t.slice(0, 120) + '…' : t) : '';
+  renderModalVis();
+  modal.hidden = false;
+}
+function closeModal() { modal.hidden = true; curCard = null; }
+document.getElementById('tun-mclose').addEventListener('click', closeModal);
+modal.addEventListener('click', function (e) { if (e.target === modal) closeModal(); });
+document.getElementById('tun-mvis').addEventListener('click', function () {
+  openVis(this.dataset.visPid);
+});
+document.addEventListener('keydown', function (e) {
+  if (e.key !== 'Escape') return;
+  if (!visSheet.hidden) { closeVis(); return; }
+  if (!modal.hidden) closeModal();
+});
+
+/* ---------- 可见范围面板 ---------- */
+var visSheet = document.getElementById('vis-sheet');
+var visPid = null;
+
+function openVis(pid) {
+  var p = findPost(pid);
+  if (!p) return;
+  visPid = String(pid);
+  var vm = visMeta(visOf(p));
+  document.getElementById('vis-sub').textContent =
+    '《' + (p.title || htmlToText(p.html).slice(0, 14) || '这条记录') + '》· 当前 ' + vm.v;
+  document.getElementById('vis-list').innerHTML = VIS.map(function (o) {
+    return '<button class="vis-opt' + (o.v === vm.v ? ' on' : '') + '" type="button" data-v="' + o.v + '">' +
+      '<span class="vis-ico">' + o.ico + '</span>' +
+      '<span class="vis-txt"><b>' + o.v + '</b><i>' + o.desc + '</i></span>' +
+      '<span class="vis-ck">✓</span></button>';
+  }).join('');
+  visSheet.hidden = false;
+}
+function closeVis() { visSheet.hidden = true; visPid = null; }
+
+/* 改一条记录的可见范围：写内存 → 落盘 → 列表/弹层/隧道同步 */
+function applyVis(pid, v) {
+  var p = findPost(pid);
+  if (!p || visOf(p) === v) return;
+  p.vis = v;
+  var ok = saveAll();
+  render();          /* 列表 chip 更新 */
+  renderModalVis();  /* 回看弹层同步 */
+  if (!ok) alert('保存失败：本地存储空间不足');
+}
+
+document.getElementById('vis-list').addEventListener('click', function (e) {
+  var b = e.target.closest('.vis-opt');
+  if (!b) return;
+  applyVis(visPid, b.dataset.v);
+  closeVis();
+});
+document.getElementById('vis-cancel').addEventListener('click', closeVis);
+visSheet.addEventListener('click', function (e) { if (e.target === visSheet) closeVis(); });
+
+/* ---------- 事件 ---------- */
+/* ?demo：无记录时注入演示数据（预览 / 无头验证用，不影响真实数据）。
+   图片 = 本地 SVG data URI（渐变远山），不依赖外网；颜色只编码一次（#→%23），别二次编码 */
+function demoImg(c1, c2, c3) {
+  /* data URI 里裸 # 会被当 fragment 截断 → 颜色必须编码成 %23 */
+  function cc(c) { return c.replace('#', '%23'); }
+  c1 = cc(c1); c2 = cc(c2); c3 = cc(c3);
+  var svg = '<svg xmlns=\'http://www.w3.org/2000/svg\' width=\'640\' height=\'480\'>' +
+    '<defs><linearGradient id=\'g\' x1=\'0\' y1=\'0\' x2=\'0\' y2=\'1\'>' +
+    '<stop offset=\'0\' stop-color=\'' + c1 + '\'/><stop offset=\'0.62\' stop-color=\'' + c2 + '\'/>' +
+    '<stop offset=\'1\' stop-color=\'' + c3 + '\'/></linearGradient></defs>' +
+    '<rect width=\'640\' height=\'480\' fill=\'url(%23g)\'/>' +
+    '<circle cx=\'480\' cy=\'120\' r=\'46\' fill=\'rgba(255,250,235,0.92)\'/>' +
+    '<path d=\'M0 340 L150 240 L290 330 L430 250 L640 360 L640 480 L0 480 Z\' fill=\'rgba(20,30,58,0.55)\'/>' +
+    '<path d=\'M0 400 L180 320 L360 405 L520 330 L640 410 L640 480 L0 480 Z\' fill=\'rgba(12,18,40,0.72)\'/>' +
+    '<circle cx=\'90\' cy=\'90\' r=\'1.6\' fill=\'rgb(255,255,255)\' opacity=\'0.85\'/><circle cx=\'210\' cy=\'60\' r=\'1.2\' fill=\'rgb(255,255,255)\' opacity=\'0.6\'/>' +
+    '<circle cx=\'330\' cy=\'110\' r=\'1.5\' fill=\'rgb(255,255,255)\' opacity=\'0.75\'/><circle cx=\'560\' cy=\'70\' r=\'1.2\' fill=\'rgb(255,255,255)\' opacity=\'0.6\'/></svg>';
+  return 'data:image/svg+xml,' + svg;
+}
+if (/demo/.test(location.search) && !loadPosts().length) {
+  try {
+    localStorage.setItem('xj-feed', JSON.stringify([
+      { id: 1756600000000, time: '8月 31日', tag: '图文记录', title: '第一次搭纸桥', likes: 12, cmts: [],
+        vis: '家人可见',
+        cover: demoImg('#FFD9A0', '#F0906A', '#5A3860'),
+        html: '用报纸和胶带搭了一座纸桥，压了三本字典还没塌。<img src="' + demoImg('#FFD9A0', '#F0906A', '#5A3860') + '">' },
+      { id: 1757600000000, time: '9月 12日', tag: '学习笔记', title: '英语不规则动词表', likes: 9, cmts: [],
+        vis: '仅自己',
+        html: '把过去式和过去分词整理成一张表，明天默写。' },
+      { id: 1758400000000, time: '9月 21日', tag: '随感', title: '晚自习后的操场', likes: 15, cmts: [],
+        vis: '公开',
+        cover: demoImg('#9FD8FF', '#5C8DE0', '#1E2A5E'),
+        html: '跑完八百米躺在草坪上，风吹过来的时候什么都不想。<img src="' + demoImg('#9FD8FF', '#5C8DE0', '#1E2A5E') + '">' },
+      { id: 1759200000000, time: '9月 30日', tag: '图文记录', title: '园区看的那片湖', likes: 21, cmts: [],
+        vis: '仅自己',
+        cover: demoImg('#C9F0E8', '#5FB8A8', '#204A58'),
+        html: '湖边的芦苇黄了，拍了好几张。<img src="' + demoImg('#C9F0E8', '#5FB8A8', '#204A58') + '"><img src="' + demoImg('#E8D8FF', '#A07BD8', '#30245E') + '">' },
+      { id: 1760000000000, time: '10月 5日', tag: '学习笔记', title: '一元二次方程错题本', likes: 8, cmts: [],
+        vis: '仅自己',
+        cover: demoImg('#FFE9C4', '#F0B060', '#6A3A28'),
+        html: '配方法还是容易漏判别式，抄了五道错题。<img src="' + demoImg('#FFE9C4', '#F0B060', '#6A3A28') + '">' },
+      { id: 1760600000000, time: '10月 11日', tag: '随感', title: '今晚的月亮很圆', likes: 18, cmts: [],
+        vis: '公开',
+        html: '晾衣服的时候抬头看到的，忽然想到快月考了。' }
+    ]));
+  } catch (e) {}
+  location.replace('my-posts.html?snap' +
+    (/deep/.test(location.search) ? '&deep' : '') +
+    (/vistest/.test(location.search) ? '&vistest' : ''));
+}
+
+document.getElementById('mp-tabs').addEventListener('click', function (e) {
+  var b = e.target.closest('.tag-opt');
+  if (!b) return;
+  this.querySelectorAll('.tag-opt').forEach(function (x) { x.classList.remove('active'); });
+  b.classList.add('active');
+  curFilter = b.dataset.f;
+  render();
+});
+document.getElementById('mp-list').addEventListener('click', function (e) {
+  var vis = e.target.closest('.vis-chip');        /* 点权限 chip：改可见范围，不进详情 */
+  if (vis) { e.stopPropagation(); openVis(vis.dataset.visPid); return; }
+  if (e.target.closest('.mp-card')) window.location.href = 'home.html';
+});
+
+reloadAll();
+render();
+setupTunnel();
+
+/* ?vistest：无头验证用 —— 改最后一条的可见范围并回读，结果写进 body[data-vis-test] */
+if (/vistest/.test(location.search) && ALL.length) {
+  var _li = ALL.length - 1, _pid = pidOf(ALL[_li], _li), _before = visOf(ALL[_li]);
+  var _tgt = _before === '公开' ? '仅自己' : '公开';
+  applyVis(_pid, _tgt);
+  var _stored = '';
+  try { _stored = visOf(JSON.parse(localStorage.getItem('xj-feed'))[_li]); } catch (e) {}
+  document.body.setAttribute('data-vis-test',
+    'before=' + _before + ';set=' + _tgt + ';after=' + visOf(ALL[_li]) + ';stored=' + _stored);
+  openVis(_pid);   /* 顺带把设置面板打开，便于截图核对 */
+}
+</script>
+</body>
+</html>

@@ -1,0 +1,668 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="light">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#F5F6F8">
+<title>阅读书单 · 学迹管理端</title>
+<link rel="stylesheet" href="style.css?v=20261021c">
+</head>
+<body data-page="books" data-title="阅读书单" data-sub="上传新书 · 逐章录入标题 / 梗概 / 正文 · 每篇一问的采分点可配可不配">
+
+<div class="app">
+  <aside class="sb" id="sb"></aside>
+  <div class="main">
+    <header class="tb" id="tb"></header>
+    <div class="content">
+
+      <section class="sec">
+        <div class="grid g-4" id="stats"></div>
+      </section>
+
+      <section class="sec">
+        <div class="sec-title">
+          <span>书架</span><span class="count" id="cnt"></span>
+          <span class="right">
+            <button class="btn btn-sm" id="import">批量导入（Markdown）</button>
+            <button class="btn btn-primary btn-sm" id="add">上传新书</button>
+          </span>
+        </div>
+        <div class="grid g-3" id="cards"></div>
+        <p class="hint">
+          目录不限定「章」—— 篇 / 回 / 节都可以；没有分篇结构的书可以只放一条「整本连读」。
+          <b>发布</b> = 该书进入学生端书架并可产生每日阅读任务；<b>配题</b> = 读完每篇弹一问（按采分点自动判分）；
+          <b>正文</b> = 学生端阅读页真正读到的文字，逐章录入（可粘可传 <code>.txt / .md</code>），空行分段。
+        </p>
+      </section>
+
+    </div>
+  </div>
+</div>
+
+<script src="demo.js?v=20261021c"></script>
+<script src="admin.js?v=20261021c"></script>
+<script>
+(function () {
+  var E = ADMIN.esc, I = ADMIN.icon;
+  var GRADES = ['不限', '七年级上', '七年级下', '八年级上', '八年级下', '九年级上', '九年级下'];
+  var COVERS = ['c1', 'c2', 'c3', 'c4', 'c5'];
+
+  /* ---------- 通用小工具 ---------- */
+  /* 章节显示标题：老数据（第 N 章 · xx）原样；纯标题按位置自动编号 */
+  function unitTitle(b, u, i) {
+    var t = (u && u.t) || '';
+    if (!t) return '第 ' + (i + 1) + ' ' + (b.unitName || '章') + ' · 待录入';
+    if (/^第\s*\d+\s*[章回篇节]/.test(t)) return t;
+    if (b.autoNum === false) return t;
+    return '第 ' + (i + 1) + ' ' + (b.unitName || '章') + ' · ' + t;
+  }
+  /* 存库前剥掉自动编号前缀，避免重复叠加 */
+  function stripNum(t) { return (t || '').replace(/^第\s*\d+\s*[章回篇节]\s*[·:：]?\s*/, '').trim(); }
+  /* 正文字数按「非空白字符」计（与用户端答题字数口径一致） */
+  function txChars(t) { return String(t == null ? '' : t).replace(/\s/g, '').length; }
+  function fmtNum(n) { return String(+n || 0).replace(/\B(?=(\d{3})+(?!\d))/g, ','); }
+  function blankUnit() { return { uid: DB.uid(), t: '', b: '', q: '', points: [], tx: 0 }; }
+  function unitCount(b) { return (b.units || []).length; }
+  function qCount(b) { return (b.units || []).filter(function (u) { return u.q; }).length; }
+  function coverHTML(b, i, cls) {
+    var s = ADMIN.imgs.src(b.cover);
+    return '<div class="bk-cover ' + (cls || '') + ' ' + (s ? '' : COVERS[i % COVERS.length]) + '">' +
+      (s ? '<img src="' + s + '" alt="">' : E((b.title || '?').slice(0, 1))) + '</div>';
+  }
+
+  /* ---------- 书目列表 ---------- */
+  function render() {
+    var books = DB.get('books', []);
+    var students = DB.get('students', []);
+    var unitsAll = books.reduce(function (n, b) { return n + unitCount(b); }, 0);
+    var unitsPlan = books.reduce(function (n, b) { return n + (+b.total || 0); }, 0);
+    var qAll = books.reduce(function (n, b) { return n + qCount(b); }, 0);
+
+    document.getElementById('cnt').textContent = '· ' + books.length + ' 本 · 已发布 ' +
+      books.filter(function (b) { return b.published; }).length + ' 本 · 已录 ' + unitsAll + ' 单元';
+
+    document.getElementById('stats').innerHTML = [
+      ['book', '', '书目总数', books.length + '<small>本</small>',
+        '已发布 ' + books.filter(function (b) { return b.published; }).length + ' 本'],
+      ['file', '', '已录目录', unitsAll + '<small>单元</small>',
+        '全书计划 ' + unitsPlan + ' 单元 · 录入率 ' + (unitsPlan ? Math.round(unitsAll / unitsPlan * 100) : 0) + '%'],
+      ['sparkle', 'ok', '已配「每篇一问」', qAll + '<small>章</small>',
+        unitsAll ? '覆盖率 ' + Math.round(qAll / unitsAll * 100) + '%（可只配重点章）' : '还没录目录'],
+      ['users', 'warn', '在读学生', books.reduce(function (n, b) { return n + (b.students || []).length; }, 0) + '<small>人</small>',
+        '共 ' + books.reduce(function (n, b) { return n + Object.keys(b.progress || {}).length; }, 0) + ' 条阅读进度']
+    ].map(function (x) {
+      return '<div class="stat"><div class="stat-top"><span class="ico ' + x[1] + '">' + I(x[0]) + '</span>' + x[2] + '</div>' +
+        '<div class="stat-num">' + x[3] + '</div><div class="stat-sub">' + E(x[4]) + '</div></div>';
+    }).join('');
+
+    document.getElementById('cards').innerHTML = books.map(function (b, bi) {
+      var readers = (b.students || []).map(function (sid) {
+        return students.filter(function (s) { return s.id === sid; })[0];
+      }).filter(Boolean);
+      var n = unitCount(b), qn = qCount(b);
+      return '<div class="card bk-card" data-id="' + b.id + '">' +
+        coverHTML(b, bi) +
+        '<div class="bk-main">' +
+          '<h3 class="bk-title">' + E(b.title) +
+            ' <span class="chip ' + (b.published ? 'ok' : '') + '">' + (b.published ? '已发布' : '未发布') + '</span>' +
+            ' <span class="chip ' + (b.qEnabled ? 'brand' : 'line') + '">' + (b.qEnabled ? '配题' : '不配题') + '</span></h3>' +
+          '<div class="bk-meta">' + E(b.author || '佚名') +
+            (b.grade && b.grade !== '不限' ? ' · ' + E(b.grade) : '') +
+            ' · ' + E(b.tag || '') + '</div>' +
+          (b.intro ? '<div class="bk-intro">' + E(b.intro) + '</div>' : '') +
+          '<div class="bar-row" style="margin:10px 0 7px">' +
+            '<div class="bar"><i style="--w:' + (+b.total ? Math.round(n / b.total * 100) : 0) + '%"></i></div>' +
+            '<span class="bar-val" style="width:auto">' + n + '/' + b.total + ' ' + E(b.unitName) + '</span></div>' +
+          '<div class="bk-tags">' +
+            '<span class="chip ' + (qn ? 'brand' : 'line') + '">' + I('sparkle') + '配题 ' + qn + '/' + (n || 0) + '</span>' +
+            (readers.length ? readers.map(function (s) {
+              return '<span class="pill">' + E(s.name) + ' 读到 <b>' + ((b.progress || {})[s.id] || 0) + '</b> ' + E(b.unitName) + '</span>';
+            }).join('') : '<span class="chip line">还没有学生在读</span>') +
+          '</div>' +
+          '<div class="btn-row" style="margin-top:11px">' +
+            '<button class="btn btn-sm btn-primary" data-act="units">' + I('file') + '目录与配题</button>' +
+            '<button class="btn btn-sm" data-act="edit">' + I('pen') + '书籍信息</button>' +
+            '<button class="btn btn-sm btn-ghost" data-act="pub">' + (b.published ? '下架' : '发布') + '</button>' +
+            '<button class="btn btn-sm btn-ghost" data-act="del">' + I('trash') + '</button>' +
+          '</div>' +
+        '</div>' +
+      '</div>';
+    }).join('') || '<div class="card"><div class="empty"><div class="ico">' + I('book') + '</div>' +
+      '<div class="empty-title">书架还是空的</div><div class="empty-sub">点右上「上传新书」开始建书单</div></div></div>';
+  }
+
+  /* ---------- 抽屉 1：上传新书 / 编辑书籍信息 ---------- */
+  function openForm(book) {
+    var isNew = !book;
+    var b = book || { title: '', author: '', grade: '不限', tag: '语文 · 必读书目', unitName: '章',
+                      total: 10, intro: '', cover: '', qEnabled: true, autoNum: true };
+    var imported = [];                                   /* 新建时从文件解析出来的目录 */
+
+    var body = '<div class="form-grid">' +
+      '<div class="field">' + ADMIN.imgs.html({ label: '封面', max: 1, hint: '3:4 竖版最佳，点添加或粘图；不传则用书名首字' }) + '</div>' +
+      '<div class="form-grid two">' +
+        '<div class="field"><label>书名<span class="req">*</span></label><input class="inp" id="f-title" value="' + E(b.title) + '" placeholder="如：朝花夕拾"></div>' +
+        '<div class="field"><label>作者</label><input class="inp" id="f-author" value="' + E(b.author) + '" placeholder="如：鲁迅"></div>' +
+      '</div>' +
+      '<div class="form-grid two">' +
+        '<div class="field"><label>适用年级</label><select class="sel" id="f-grade">' +
+          GRADES.map(function (g) { return '<option' + (g === b.grade ? ' selected' : '') + '>' + g + '</option>'; }).join('') +
+        '</select></div>' +
+        '<div class="field"><label>书单标签</label><input class="inp" id="f-tag" value="' + E(b.tag || '') + '" placeholder="如：语文 · 必读书目"></div>' +
+      '</div>' +
+      '<div class="form-grid two">' +
+        '<div class="field"><label>单元名（章 / 回 / 篇 / 节）</label><input class="inp" id="f-unit" value="' + E(b.unitName) + '"></div>' +
+        '<div class="field"><label>总单元数</label><input class="inp" id="f-total" type="number" value="' + (+b.total || 10) + '"></div>' +
+      '</div>' +
+      '<div class="field"><label>一句话简介</label><input class="inp" id="f-intro" value="' + E(b.intro || '') + '" placeholder="如：老舍长篇代表作：一个北平车夫的三起三落。"></div>' +
+      '<label class="switch"><input type="checkbox" id="f-q" ' + (b.qEnabled ? 'checked' : '') + '>' +
+        '<span class="track"></span><span class="sw-txt">每篇一问（读完弹一道主观题，按采分点判分）</span></label>' +
+      '<label class="switch"><input type="checkbox" id="f-auto" ' + (b.autoNum !== false ? 'checked' : '') + '>' +
+        '<span class="track"></span><span class="sw-txt">章节标题自动编号（「第 3 章 · 标题」，调序后自动重排）</span></label>' +
+      (isNew
+        ? '<div class="flabel" style="margin-top:2px">从目录文件导入 <span class="muted">（可选，.txt / .md；每行一章）</span></div>' +
+          '<div class="input-row">' +
+            '<input class="inp" id="f-file" type="file" accept=".txt,.md,.text" style="height:auto;padding:8px 12px">' +
+          '</div>' +
+          '<p class="hint" id="f-file-tip">每行一章，支持 <code>1 第一辆车 | 攒满三年终于买上了车</code> 这种写法，也可以只写标题；' +
+            '导进来之后还能逐条改。</p>'
+        : '') +
+      '</div>';
+
+    ADMIN.drawer({
+      title: isNew ? '上传新书' : '《' + b.title + '》· 书籍信息',
+      body: body,
+      foot: '<button class="btn" data-x="no">取消</button>' +
+            '<button class="btn btn-primary" data-x="ok">' + (isNew ? '创建并录入目录' : '保存') + '</button>',
+      onMount: function (d) {
+        var box = d.querySelector('.imgbox');
+        if (b.cover) ADMIN.imgs.set(box, [b.cover]);
+
+        var fileEl = d.querySelector('#f-file');
+        if (fileEl) fileEl.addEventListener('change', function () {
+          var f = (fileEl.files || [])[0];
+          if (!f) return;
+          var fr = new FileReader();
+          fr.onload = function () {
+            imported = parseToc(String(fr.result));
+            d.querySelector('#f-file-tip').innerHTML = imported.length
+              ? '已从《' + E(f.name) + '》解析出 <b>' + imported.length + '</b> 章，' +
+                '第一章：' + E(imported[0].t || '（无标题）') + '；创建后可在「目录与配题」里逐条改。'
+              : '这个文件里没解析出章节，检查是否每行一章。';
+            if (imported.length && !d.querySelector('#f-total').value) d.querySelector('#f-total').value = imported.length;
+          };
+          fr.readAsText(f, 'UTF-8');
+        });
+
+        d.querySelector('[data-x="no"]').addEventListener('click', ADMIN.closeDrawer);
+        d.querySelector('[data-x="ok"]').addEventListener('click', function () {
+          var title = d.querySelector('#f-title').value.trim();
+          if (!title) { ADMIN.toast('请填写书名', 'warn'); return; }
+          var books = DB.get('books', []);
+          var oldCover = b.cover || '';
+          var newCover = ADMIN.imgs.read(box)[0] || '';
+          if (oldCover && oldCover !== newCover) DB.imgDel(oldCover);
+
+          var patch = {
+            title: title,
+            author: d.querySelector('#f-author').value.trim(),
+            grade: d.querySelector('#f-grade').value,
+            tag: d.querySelector('#f-tag').value.trim(),
+            unitName: d.querySelector('#f-unit').value.trim() || '章',
+            total: +d.querySelector('#f-total').value || 10,
+            intro: d.querySelector('#f-intro').value.trim(),
+            qEnabled: d.querySelector('#f-q').checked,
+            autoNum: d.querySelector('#f-auto').checked,
+            cover: newCover
+          };
+
+          var target;
+          if (isNew) {
+            target = { id: 'bk' + Date.now(), units: imported, students: [], progress: {},
+                       on: false, published: false, createdAt: Date.now() };
+            Object.keys(patch).forEach(function (k) { target[k] = patch[k]; });
+            books.push(target);
+          } else {
+            target = books.filter(function (x) { return x.id === b.id; })[0] || b;
+            Object.keys(patch).forEach(function (k) { target[k] = patch[k]; });
+          }
+          DB.set('books', books);
+          ADMIN.closeDrawer();
+          render();
+          if (isNew) {
+            ADMIN.toast(imported.length ? '已创建，目录已导入 ' + imported.length + ' 章' : '已创建，接着录入目录');
+            openUnits(target);                       /* 创建后直接进章节编辑器 */
+          } else {
+            ADMIN.toast('已保存书籍信息');
+          }
+        });
+      }
+    });
+  }
+
+  /* 目录文本 → [{t,b}]：支持「1 标题 | 梗概」「标题 | 梗概」「标题」，忽略 Markdown 符号 */
+  function parseToc(text) {
+    return String(text || '').split(/\r?\n/).map(function (line) {
+      var s = line.replace(/^\s*[-*·•#>]+\s*/, '').trim();
+      if (!s) return null;
+      var parts = s.split('|');
+      var head = (parts[0] || '').trim().replace(/^\d+[\s.、)）]+/, '').replace(/^第\s*\d+\s*[章回篇节]\s*[·:：]?\s*/, '');
+      var b = (parts[1] || '').trim();
+      if (!head && !b) return null;
+      return { t: head, b: b, points: [] };
+    }).filter(Boolean);
+  }
+
+  /* ---------- 抽屉 2：目录与配题（章节编辑器） ---------- */
+  function openUnits(book) {
+    var units = JSON.parse(JSON.stringify(book.units || []));
+    /* 老数据 / 新建占位可能没有 uid —— 正文键靠它定位，这里统一补齐 */
+    units.forEach(function (u) {
+      if (!u.uid) u.uid = DB.uid();
+      if (u.tx === undefined) u.tx = 0;
+    });
+    var st = { q: '', f: 'all', open: null, paste: false, nuid: '' };
+    var d = null;
+
+    function save() {
+      var books = DB.get('books', []);
+      var b = books.filter(function (x) { return x.id === book.id; })[0];
+      if (b) { b.units = units; DB.set('books', books); }
+      book.units = units;
+    }
+    function match(x) {
+      if (st.f === 'q' && !x.u.q) return false;
+      if (st.f === 'nq' && x.u.q) return false;
+      if (st.f === 'blank' && x.u.t) return false;
+      var kw = st.q.trim().toLowerCase();
+      if (!kw) return true;
+      return ((x.u.t || '') + ' ' + (x.u.b || '') + ' ' + (x.u.q || '')).toLowerCase().indexOf(kw) >= 0;
+    }
+    function rows() {
+      return units.map(function (u, i) { return { u: u, i: i }; });
+    }
+
+    function headHTML() {
+      var qn = qCount({ units: units });
+      var tn = units.filter(function (u) { return u.tx; }).length;
+      var tc = units.reduce(function (n, u) { return n + (+u.tx || 0); }, 0);
+      return '<div class="cu-head">' +
+        coverHTML(book, 0) +
+        '<div class="cu-head-main">' +
+          '<div class="cu-head-t">' + E(book.title) + '</div>' +
+          '<div class="cu-head-s">' + E(book.author || '佚名') + ' · ' + E(book.unitName) + ' · 已录 ' +
+            units.length + '/' + book.total + ' · 已配题 ' + qn + ' 章 · 已录正文 ' + tn + ' 章' +
+            (tn ? '（' + fmtNum(tc) + ' 字）' : '') + '</div>' +
+        '</div>' +
+        '<div class="cu-head-bar"><div class="bar"><i style="--w:' +
+          (book.total ? Math.round(units.length / book.total * 100) : 0) + '%"></i></div></div>' +
+      '</div>';
+    }
+
+    function editHTML(i, u) {
+      var isNew = i === 'new';
+      u = u || blankUnit();
+      var uid = isNew ? (st.nuid || (st.nuid = DB.uid())) : u.uid;
+      var pts = (u.points || []).map(function (p) { return p.label; }).join('\n');
+      var tx = isNew ? '' : DB.txtGet(book.id, uid);
+      return '<div class="cu-edit" data-edit="' + (isNew ? 'new' : i) + '" data-uid="' + uid + '">' +
+        '<div class="field"><label>标题<span class="req">*</span> <span class="muted">' +
+          (book.autoNum === false ? '' : '（序号自动生成，这里只写标题）') + '</span></label>' +
+          '<input class="inp" id="cu-t" value="' + E(isNew ? '' : (u.t || '')) + '" placeholder="如：第一辆车"></div>' +
+        '<div class="field"><label>梗概（一句话，学生端目录里显示）</label>' +
+          '<textarea class="ta" id="cu-b" placeholder="攒满三年，祥子终于买上了第一辆属于自己的车。">' + E(u.b || '') + '</textarea></div>' +
+        '<div class="field"><label>正文 <span class="muted">（学生端阅读页真正读到的文字；空行分段，留空则这一章只展示梗概）</span></label>' +
+          '<textarea class="ta tx-ta" id="cu-tx" placeholder="把这一章的原文粘进来，段与段之间空一行。&#10;&#10;也可以点下面的按钮，直接载入 .txt / .md 文件。">' + E(tx) + '</textarea>' +
+          '<div class="tx-bar">' +
+            '<button class="btn btn-xs" data-cu="tx-file">' + I('file') + '载入 .txt / .md 文件</button>' +
+            '<input type="file" id="cu-file" accept=".txt,.md,text/plain" hidden>' +
+            '<span class="tx-n" id="cu-txc">' + fmtNum(txChars(tx)) + ' 字</span>' +
+            '<span class="muted">正文不占后台主库（按章单独存），长篇也不会拖慢列表</span>' +
+          '</div>' +
+        '</div>' +
+        '<div class="field"><label>每篇一问 · 问题（留空 = 这一章不配题）</label>' +
+          '<textarea class="ta" id="cu-q" placeholder="这一章里的「车」，对祥子来说意味着什么？">' + E(u.q || '') + '</textarea></div>' +
+        '<div class="field"><label>采分点（每行一个，判分按关键词命中）</label>' +
+          '<textarea class="ta" id="cu-p" placeholder="点出车是他的梦想与希望&#10;点出车代表独立与尊严">' + E(pts) + '</textarea></div>' +
+        '<div class="cu-edit-foot">' +
+          '<button class="btn btn-sm btn-primary" data-cu="save">' + (isNew ? '添加' : '保存这一章') + '</button>' +
+          '<button class="btn btn-sm" data-cu="cancel">取消</button>' +
+          (isNew ? '' : '<button class="btn btn-sm btn-ghost" data-cu="del">' + I('trash') + '删除</button>') +
+          '<span class="muted">改动在点底部「保存目录」后生效</span>' +
+        '</div>' +
+      '</div>';
+    }
+
+    function rowHTML(x) {
+      var u = x.u, i = x.i;
+      if (st.open === i) return editHTML(i, u);
+      return '<div class="cu-row' + (u.t ? '' : ' blank') + '" data-i="' + i + '">' +
+        '<span class="cu-idx">' + (i + 1) + '</span>' +
+        '<div class="cu-main">' +
+          '<div class="cu-t">' + E(unitTitle(book, u, i)) + '</div>' +
+          (u.b ? '<div class="cu-b">' + E(u.b) + '</div>' : '') +
+          '<div>' +
+            (u.tx ? '<span class="cu-tx on">' + I('file') + '正文 ' + fmtNum(u.tx) + ' 字</span>'
+                  : '<span class="cu-tx miss">' + I('file') + '未录正文</span>') +
+          '</div>' +
+          (u.q ? '<div class="cu-q">' + I('sparkle') + ' ' + E(u.q) + '</div>' : '') +
+        '</div>' +
+        '<div class="cu-acts">' +
+          '<button class="btn btn-xs btn-ghost" data-cu="edit" data-i="' + i + '">' + I('pen') + '</button>' +
+          '<button class="btn btn-xs btn-ghost" data-cu="copy" data-i="' + i + '" title="复制一章">' + I('copy') + '</button>' +
+          '<button class="btn btn-xs btn-ghost" data-cu="up" data-i="' + i + '" title="上移">↑</button>' +
+          '<button class="btn btn-xs btn-ghost" data-cu="down" data-i="' + i + '" title="下移">↓</button>' +
+          '<button class="btn btn-xs btn-ghost" data-cu="del" data-i="' + i + '" title="删除">' + I('trash') + '</button>' +
+        '</div>' +
+      '</div>';
+    }
+
+    function listHTML() {
+      var vis = rows().filter(match);
+      var out = '';
+      if (st.open === 'new') out += editHTML('new');
+      if (!units.length) {
+        out += '<div class="cu-empty">目录还是空的 —— 点「新增一章」逐条录，或「批量粘贴」「补齐占位」快速铺开</div>';
+      } else if (!vis.length) {
+        out += '<div class="cu-empty">没有匹配的章节</div>';
+      } else {
+        out += vis.map(rowHTML).join('');
+      }
+      return out;
+    }
+
+    function paint() {
+      d.querySelector('#cu-head').innerHTML = headHTML();
+      d.querySelector('#cu-list').innerHTML = listHTML();
+      d.querySelector('#cu-cnt').textContent = units.length + ' 章 · 已配题 ' + qCount({ units: units }) + ' 章' +
+        (rows().filter(match).length !== units.length ? ' · 筛出 ' + rows().filter(match).length + ' 章' : '');
+      var paste = d.querySelector('#cu-paste');
+      paste.hidden = !st.paste;
+    }
+
+    var body = '<div id="cu-head"></div>' +
+      '<div class="cu-tool">' +
+        '<input class="inp" id="cu-search" placeholder="搜章节标题 / 梗概 / 问题…">' +
+        '<span class="seg" id="cu-f">' +
+          '<button data-val="all" class="on">全部</button>' +
+          '<button data-val="q">已配题</button>' +
+          '<button data-val="nq">未配题</button>' +
+          '<button data-val="blank">待录入</button>' +
+        '</span>' +
+      '</div>' +
+      '<div class="cu-tool">' +
+        '<button class="btn btn-sm btn-primary" data-tool="new">' + I('plus') + '新增一章</button>' +
+        '<button class="btn btn-sm" data-tool="paste">批量粘贴</button>' +
+        '<button class="btn btn-sm" data-tool="fill">补齐到 ' + (+book.total || 0) + ' 章</button>' +
+        '<span class="count" id="cu-cnt" style="margin-left:auto"></span>' +
+      '</div>' +
+      '<div id="cu-paste" hidden>' +
+        '<div class="cu-edit" style="border-color:var(--border-2)">' +
+          '<div class="field"><label>批量粘贴目录 <span class="muted">（每行一章：标题 | 梗概；也可只写标题；正文需逐章录入）</span></label>' +
+            '<textarea class="ta" id="cu-paste-t" style="min-height:110px" placeholder="第一辆车 | 攒满三年终于买上了车&#10;车丢了 | 乱兵把祥子连人带车抓走"></textarea></div>' +
+          '<div class="cu-edit-foot">' +
+            '<button class="btn btn-sm btn-primary" data-tool="paste-add">追加到末尾</button>' +
+            '<button class="btn btn-sm" data-tool="paste-over">覆盖现有目录</button>' +
+            '<button class="btn btn-sm" data-tool="paste-close">收起</button>' +
+            '<span class="muted">覆盖前请确认已保存</span>' +
+          '</div>' +
+        '</div>' +
+      '</div>' +
+      '<div class="cu-list" id="cu-list"></div>';
+
+    ADMIN.drawer({
+      title: '目录与配题 · 《' + book.title + '》',
+      body: body,
+      foot: '<span class="muted" style="margin-right:auto">逐章录入 · 可调序 · 可批量粘贴</span>' +
+            '<button class="btn" data-x="no">关闭</button>' +
+            '<button class="btn btn-primary" data-x="ok">保存目录</button>',
+      onMount: function (dd) {
+        d = dd;
+        ADMIN.seg('#cu-f', function (v) { st.f = v; paint(); });
+        d.querySelector('#cu-search').addEventListener('input', function () { st.q = this.value; paint(); });
+        d.querySelector('[data-x="no"]').addEventListener('click', ADMIN.closeDrawer);
+        d.querySelector('[data-x="ok"]').addEventListener('click', function () {
+          save();
+          var gc = DB.txtGC();                 /* 顺手回收已从目录里移除的章节正文（覆盖目录后尤其需要） */
+          ADMIN.closeDrawer();
+          ADMIN.toast('目录已保存：' + units.length + ' 章' + (gc ? ' · 清掉 ' + gc + ' 段废弃正文' : ''));
+          render();
+        });
+
+        function readEdit() {
+          var t = d.querySelector('#cu-t').value.trim();
+          if (!t) { ADMIN.toast('标题不能为空', 'warn'); return null; }
+          var pts = d.querySelector('#cu-p').value.split('\n').map(function (x) { return x.trim(); }).filter(Boolean);
+          return {
+            t: stripNum(t),
+            b: d.querySelector('#cu-b').value.trim(),
+            q: d.querySelector('#cu-q').value.trim(),
+            points: pts.map(function (label) { return { label: label, k: label.split(/[，,、\s]+/).filter(Boolean) }; }),
+            _tx: d.querySelector('#cu-tx') ? d.querySelector('#cu-tx').value : ''
+          };
+        }
+        /* tag：'new' 或行号；uid：编辑面板的 data-uid —— 正文键按 bookId-uid 定位 */
+        function commitEdit(tag, uid) {
+          var isNew = tag === 'new';
+          var u = readEdit();
+          if (!u) return;
+          var text = u._tx; delete u._tx;
+          var n = DB.txtSet(book.id, uid, text);          /* 空正文 = 删键返回 0；配额满返回 -1 */
+          if (n < 0) { ADMIN.toast('本地存储已满，这一章正文没存下 —— 先删几张配图或清理数据', 'warn'); n = 0; }
+          u.uid = uid;
+          u.tx = n;
+          if (isNew) { units.push(u); st.nuid = ''; }
+          else units[+tag] = u;
+          st.open = null;
+          paint();
+          ADMIN.toast(isNew
+            ? '已添加第 ' + units.length + ' 章' + (n ? ' · 正文 ' + fmtNum(n) + ' 字' : ' · 未录正文')
+            : '已更新这一章' + (n ? ' · 正文 ' + fmtNum(n) + ' 字' : ''));
+        }
+
+        /* 正文字数实时统计 */
+        d.addEventListener('input', function (e) {
+          if (e.target && e.target.id === 'cu-tx') {
+            var cEl = d.querySelector('#cu-txc');
+            if (cEl) cEl.textContent = fmtNum(txChars(e.target.value)) + ' 字';
+          }
+        });
+
+        /* 载入单章正文（.txt / .md）→ 填进正文框，确认后点「保存这一章」 */
+        d.addEventListener('change', function (e) {
+          if (!e.target || e.target.id !== 'cu-file') return;
+          var f = (e.target.files || [])[0];
+          if (!f) return;
+          var fr = new FileReader();
+          fr.onerror = function () { ADMIN.toast('文件读不出来 —— 试试另存为 UTF-8 编码再传', 'warn'); };
+          fr.onload = function () {
+            var ta = d.querySelector('#cu-tx');
+            if (!ta) return;
+            var txt = String(fr.result).replace(/\r\n?/g, '\n');
+            var bad = (txt.match(/\uFFFD/g) || []).length;       /* 非 UTF-8 会解出替换字符 */
+            ta.value = txt;
+            var cEl = d.querySelector('#cu-txc');
+            if (cEl) cEl.textContent = fmtNum(txChars(txt)) + ' 字';
+            if (bad > 3) {
+              ADMIN.toast('已载入，但有 ' + bad + ' 处乱码 —— 文件不是 UTF-8，另存后重传', 'warn');
+            } else {
+              ADMIN.toast('已载入《' + f.name + '》· ' + fmtNum(txChars(txt)) + ' 字，确认后点「保存这一章」');
+            }
+          };
+          fr.readAsText(f, 'UTF-8');
+          e.target.value = '';                                   /* 清空，方便连续传同一个文件 */
+        });
+
+        d.addEventListener('click', function (e) {
+          /* 工具行 */
+          var tool = e.target.closest('[data-tool]');
+          if (tool) {
+            var k = tool.getAttribute('data-tool');
+            if (k === 'new') { st.open = 'new'; st.nuid = ''; st.f = 'all'; paint();
+              if (d.querySelector('#cu-t')) d.querySelector('#cu-t').focus(); return; }
+            if (k === 'paste') { st.paste = !st.paste; paint(); return; }
+            if (k === 'paste-close') { st.paste = false; paint(); return; }
+            if (k === 'fill') {
+              var total = +book.total || 0, need = total - units.length;
+              if (need <= 0) { ADMIN.toast('已经录满 ' + total + ' 章了'); return; }
+              var once = Math.min(need, 60);
+              ADMIN.confirm({
+                title: '补齐待录入占位？', ok: '补 ' + once + ' 条',
+                text: '按总数 ' + total + ' 补 ' + need + ' 条空白章节' +
+                  (need > once ? '（一次最多 ' + once + ' 条，补完再点一次即可）' : '') +
+                  '，标题先显示「待录入」，之后逐条填。',
+                onOk: function () {
+                  for (var n = 0; n < once; n++) units.push(blankUnit());
+                  paint();
+                  ADMIN.toast('已补 ' + once + ' 条占位，还剩 ' + Math.max(0, need - once) + ' 条');
+                }
+              });
+              return;
+            }
+            if (k === 'paste-add' || k === 'paste-over') {
+              var lines = parseToc(d.querySelector('#cu-paste-t').value);
+              if (!lines.length) { ADMIN.toast('没解析出章节', 'warn'); return; }
+              if (k === 'paste-over') units = [];
+              lines.forEach(function (u) {
+                if (!u.uid) u.uid = DB.uid();
+                if (u.tx === undefined) u.tx = 0;
+                units.push(u);
+              });
+              st.paste = false; paint();
+              ADMIN.toast((k === 'paste-over' ? '已覆盖为 ' : '已追加 ') + lines.length + ' 章');
+              return;
+            }
+          }
+          /* 行内操作 */
+          var act = e.target.closest('[data-cu]');
+          if (!act) return;
+          var a = act.getAttribute('data-cu');
+          var i = act.getAttribute('data-i');
+          var idx = i === null ? null : +i;
+          if (a === 'tx-file') {                        /* 点按钮 → 拉起隐藏的 file 选择器 */
+            var fi = d.querySelector('#cu-file');
+            if (fi) fi.click();
+            return;
+          }
+          if (a === 'edit') { st.open = idx; paint(); return; }
+          if (a === 'cancel') { st.open = null; st.nuid = ''; paint(); return; }
+          if (a === 'save') {
+            var ed = act.closest('.cu-edit');
+            commitEdit(ed.getAttribute('data-edit'), ed.getAttribute('data-uid'));
+            return;
+          }
+          if (a === 'del') {
+            if (act.closest('.cu-edit')) {              /* 编辑面板里的删除：删的就是当前这一章 */
+              var dtag = act.closest('.cu-edit').getAttribute('data-edit');
+              if (dtag !== 'new') {
+                var di = +dtag;
+                DB.txtDel(book.id, units[di].uid);
+                units.splice(di, 1);
+              }
+              st.open = null; st.nuid = '';
+              paint(); ADMIN.toast('已删除这一章');
+              return;
+            }
+            var u = units[idx];
+            ADMIN.confirm({
+              title: '删除这一章？', ok: '删除', danger: true,
+              text: '「' + unitTitle(book, u, idx) + '」会从目录里移除（含已录正文；学生端已读进度保留）。',
+              onOk: function () {
+                DB.txtDel(book.id, u.uid);
+                units.splice(idx, 1); paint(); ADMIN.toast('已删除，点「保存目录」生效');
+              }
+            });
+            return;
+          }
+          if (a === 'copy') {
+            var src = units[idx];
+            var c = JSON.parse(JSON.stringify(src));
+            c.uid = DB.uid();
+            c.t = c.t ? c.t + '（副本）' : '';
+            if (src.tx) {                               /* 正文一并复制到新章 */
+              var cn = DB.txtSet(book.id, c.uid, DB.txtGet(book.id, src.uid));
+              c.tx = cn < 0 ? 0 : cn;
+            } else c.tx = 0;
+            units.splice(idx + 1, 0, c);
+            paint(); ADMIN.toast('已复制到下一行' + (c.tx ? '（含正文）' : ''));
+            return;
+          }
+          if (a === 'up' && idx > 0) { var t1 = units[idx]; units[idx] = units[idx - 1]; units[idx - 1] = t1; paint(); return; }
+          if (a === 'down' && idx < units.length - 1) { var t2 = units[idx]; units[idx] = units[idx + 1]; units[idx + 1] = t2; paint(); return; }
+        });
+
+        paint();
+      }
+    });
+  }
+
+  /* ---------- 上传新书 ---------- */
+  document.getElementById('add').addEventListener('click', function () { openForm(null); });
+
+  /* ---------- 批量导入书目（Markdown，多本） ---------- */
+  document.getElementById('import').addEventListener('click', function () {
+    ADMIN.drawer({
+      title: '批量导入书目',
+      body: '<p class="hint" style="margin-bottom:10px">Markdown 格式，一本书一段：</p>' +
+        '<textarea class="ta mono" style="min-height:180px;white-space:pre" id="i-md">## 朝花夕拾 · 鲁迅 · 篇 · 10\n1 小引 | 交代写作缘起\n2 狗·猫·鼠 | 仇猫的缘由\n3 阿长与山海经 | 长妈妈与三哼经</textarea>' +
+        '<p class="hint" style="margin-top:10px">首行：## 书名 · 作者 · 单元名 · 总数；其后每行：序号 标题 | 梗概</p>',
+      foot: '<button class="btn" data-x="no">取消</button><button class="btn btn-primary" data-x="ok">解析并导入</button>',
+      onMount: function (d) {
+        d.querySelector('[data-x="no"]').addEventListener('click', ADMIN.closeDrawer);
+        d.querySelector('[data-x="ok"]').addEventListener('click', function () {
+          var md = d.querySelector('#i-md').value.split('\n');
+          var head = (md[0] || '').replace(/^#+\s*/, '').split(/[·•]\s*/).map(function (x) { return x.trim(); });
+          if (!head[0]) { ADMIN.toast('首行格式不对', 'warn'); return; }
+          var books = DB.get('books', []);
+          var units = parseToc(md.slice(1).join('\n'));
+          books.push({
+            id: 'bk' + Date.now(), title: head[0], author: head[1] || '',
+            unitName: head[2] || '章', total: +head[3] || units.length || 10,
+            grade: '不限', intro: '', tag: '语文 · 批量导入', cover: '',
+            qEnabled: false, autoNum: true, on: false, published: false,
+            createdAt: Date.now(), units: units, students: [], progress: {}
+          });
+          DB.set('books', books);
+          ADMIN.closeDrawer(); ADMIN.toast('已导入《' + head[0] + '》' + units.length + ' 个单元'); render();
+        });
+      }
+    });
+  });
+
+  /* ---------- 卡片事件 ---------- */
+  document.getElementById('cards').addEventListener('click', function (e) {
+    var btn = e.target.closest('button[data-act]');
+    if (!btn) return;
+    var card = e.target.closest('.card');
+    var books = DB.get('books', []);
+    var book = books.filter(function (x) { return x.id === card.getAttribute('data-id'); })[0];
+    if (!book) return;
+    var act = btn.getAttribute('data-act');
+    if (act === 'units') openUnits(book);
+    if (act === 'edit') openForm(book);
+    if (act === 'pub') {
+      book.published = !book.published;
+      if (book.published) book.on = true;
+      DB.set('books', books);
+      ADMIN.toast(book.published ? '已发布：学生端书架可见，可产生每日阅读任务' : '已下架');
+      render();
+    }
+    if (act === 'del') {
+      ADMIN.confirm({
+        title: '删除《' + book.title + '》？', danger: true, ok: '删除',
+        text: '整本书的目录与配题都会移除；已产生的阅读进度与「每篇一问」记录保留在学生端。',
+        onOk: function () {
+          if (book.cover) DB.imgDel(book.cover);
+          DB.set('books', books.filter(function (x) { return x.id !== book.id; }));
+          DB.txtGC();                                  /* 这本书的章节正文一并回收 */
+          ADMIN.toast('已删除'); render();
+        }
+      });
+    }
+  });
+
+  render();
+})();
+</script>
+</body>
+</html>

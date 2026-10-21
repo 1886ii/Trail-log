@@ -1,0 +1,478 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="light">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#F5F6F8">
+<title>作文批改 · 学迹管理端</title>
+<link rel="stylesheet" href="style.css?v=20261021c">
+</head>
+<body data-page="essays" data-title="作文批改" data-sub="AI 先评阅打分，你确认后同步给学生 · 引导和点评不打分压制表达欲">
+
+<div class="app">
+  <aside class="sb" id="sb"></aside>
+  <div class="main">
+    <header class="tb" id="tb"></header>
+    <div class="content">
+
+      <section class="sec">
+        <div class="sec-title">
+          <span>作文任务</span><span class="count" id="t-cnt"></span>
+          <span class="right">
+            <button class="btn btn-sm" id="add-feat">录入佳作</button>
+            <button class="btn btn-primary btn-sm" id="add">新建作文任务</button>
+          </span>
+        </div>
+        <div class="tbl-wrap">
+          <table class="tbl">
+            <thead><tr><th>题目</th><th>科目 / 要求</th><th>截止</th><th>提交情况</th><th>状态</th><th style="text-align:right">操作</th></tr></thead>
+            <tbody id="t-rows"></tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="sec">
+        <div class="sec-title">学生提交 <span class="count" id="s-cnt"></span></div>
+        <div class="grid g-auto" id="subs"></div>
+        <p class="hint">
+          流程：学生端提交 → AI 按「采分点 + 结构 + 表达」出分与点评（秒级）→ <b>你复核确认</b> →
+          结果同步到学生端「作文」页。复核时可以直接改分、补一句鼓励的话 —— 低分作文永远先给“结构点评 + 升格建议”，不堆分数打击。
+        </p>
+      </section>
+
+      <section class="sec">
+        <div class="sec-title">
+          <span>佳作库</span><span class="count" id="f-cnt"></span>
+          <span class="right"><button class="btn btn-sm" id="add-feat2">录入佳作</button></span>
+        </div>
+        <div class="grid g-auto" id="feats"></div>
+        <p class="hint">
+          佳作<b>只在作文里产生</b>：① 上面「录入佳作」手写或粘贴一篇范文（课外好文、满分作文都能收）② 学生提交里点「设为佳作」把好作文存进来。
+          收进来的会出现在学生端「佳作」位，同时留一份正文快照 —— 原文以后再改，佳作也不会跟着变。
+        </p>
+      </section>
+
+    </div>
+  </div>
+</div>
+
+<script src="demo.js?v=20261021c"></script>
+<script src="admin.js?v=20261021c"></script>
+<script>
+(function () {
+  var E = ADMIN.esc, I = ADMIN.icon;
+  var students = DB.get('students', []);
+  function stu(id) { return students.filter(function (s) { return s.id === id; })[0] || { name: '?', color: 'c1', initial: '?' }; }
+
+  /* ---------- 截止时间：选择器默认值 + 可读文案 ---------- */
+  function p2(n) { return (n < 10 ? '0' : '') + n; }
+  /* Date → datetime-local 需要的 'YYYY-MM-DDTHH:mm'（本地时区） */
+  function toLocalInput(d) {
+    return d.getFullYear() + '-' + p2(d.getMonth() + 1) + '-' + p2(d.getDate()) + 'T' + p2(d.getHours()) + ':' + p2(d.getMinutes());
+  }
+  /* 默认：3 天后 20:00（学生晚上交作业的常见时间） */
+  function defDue() {
+    var d = new Date();
+    d.setDate(d.getDate() + 3); d.setHours(20, 0, 0, 0);
+    return toLocalInput(d);
+  }
+  /* '2026-10-17T20:00' → '10月17日 20:00'（当年不写年份；老的自然语言值原样返回） */
+  function fmtDue(v) {
+    var m = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})/.exec(v || '');
+    if (!m) return v || '';
+    var sameYear = (+m[1] === new Date().getFullYear());
+    return (sameYear ? '' : m[1] + '年') + (+m[2]) + '月' + (+m[3]) + '日 ' + m[4] + ':' + m[5];
+  }
+
+  function render() {
+    var essays = DB.get('essays', []);
+    document.getElementById('t-cnt').textContent = '· ' + essays.length + ' 个任务';
+
+    document.getElementById('t-rows').innerHTML = essays.map(function (t) {
+      var subs = t.subs || [];
+      var need = (t.students || []).length || subs.length;
+      return '<tr data-id="' + t.id + '">' +
+        '<td><div class="t-main">' + E(t.title) + '</div><div class="t-sub">' + E(t.id) + ' · 不少于 ' + t.minWords + ' 词/字</div></td>' +
+        '<td><span class="chip ' + (t.subject === '数学' ? 'brand' : '') + '">' + E(t.subject) + '</span>' +
+          '<div class="t-sub">' + (t.points || []).length + ' 个采分点</div></td>' +
+        '<td>' + E(fmtDue(t.due)) + '</td>' +
+        '<td>' + subs.length + ' / ' + (t.published ? Math.max(need, subs.length) : '—') + ' 篇</td>' +
+        '<td>' + (t.published ? '<span class="chip ok">已发布</span>' : '<span class="chip warn">草稿</span>') +
+          (subs.some(function (s) { return s.status === '待复核'; }) ? ' <span class="chip danger">有待复核</span>' : '') + '</td>' +
+        '<td class="t-act">' +
+          '<button class="btn btn-xs btn-ghost" data-act="pub">' + (t.published ? '下架' : '发布') + '</button> ' +
+          '<button class="btn btn-xs btn-ghost" data-act="del">' + I('trash') + '</button>' +
+        '</td></tr>';
+    }).join('') || '<tr><td colspan="6"><div class="empty"><div class="empty-title">还没有作文任务</div></div></td></tr>';
+
+    var subs = [];
+    essays.forEach(function (t) {
+      (t.subs || []).forEach(function (s) { subs.push({ task: t, sub: s }); });
+    });
+    subs.sort(function (a, b) { return b.sub.at - a.sub.at; });
+    document.getElementById('s-cnt').textContent = '· ' + subs.length + ' 篇 · 待复核 ' +
+      subs.filter(function (x) { return x.sub.status === '待复核'; }).length + ' 篇';
+
+    document.getElementById('subs').innerHTML = subs.length ? subs.map(function (x, i) {
+      var s = stu(x.sub.sid), t = x.task, sub = x.sub;
+      var cls = sub.status === '待复核' ? 'warn' : 'ok';
+      return '<div class="card" data-i="' + i + '" style="cursor:pointer">' +
+        '<div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">' + ADMIN.avatar(s) +
+          '<div style="flex:1;min-width:0"><div style="font-size:13.5px;font-weight:600">' + E(s.name) + '</div>' +
+          '<div class="row-meta">' + E(t.subject) + ' · ' + E(t.title) + ' · ' + ADMIN.ago(sub.at) + '</div></div>' +
+          '<span class="chip ' + cls + '">' + E(sub.status) + '</span></div>' +
+        '<div class="bar-row"><div class="bar"><i class="' + (sub.aiScore >= 85 ? 'ok' : (sub.aiScore < 70 ? 'warn' : '')) +
+          '" style="--w:' + sub.aiScore + '%"></i></div><span class="bar-val">AI ' + sub.aiScore + '</span></div>' +
+        '<p class="row-meta" style="margin-top:10px;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden">' +
+          E(sub.text) + '</p>' +
+        '<div class="btn-row" style="margin-top:12px">' +
+          (sub.status === '待复核' ? '<button class="btn btn-sm btn-primary" data-open="' + i + '">复核确认</button>'
+            : '<button class="btn btn-sm" data-open="' + i + '">查看批改</button>') +
+          '<button class="btn btn-sm btn-ghost" data-feat="' + i + '">' + I('star') +
+            (sub.featured ? '移出佳作' : '设为佳作') + '</button>' +
+          '<span class="row-meta" style="margin-left:auto">' + sub.words + ' 词/字' +
+          (sub.reviewer ? ' · 复核：' + E(sub.reviewer) : '') + '</span>' +
+        '</div>' +
+      '</div>';
+    }).join('') : '<div class="card"><div class="empty"><div class="ico">' + I('pen') + '</div>' +
+      '<div class="empty-title">还没有提交</div><div class="empty-sub">发布任务后，学生端「作文」页就能写</div></div></div>';
+
+    renderFeatured();
+  }
+
+  /* ------------------------------------------------------------
+     佳作库：只在作文里产生 —— ①「录入佳作」手录范文 ② 学生作文入选
+     存的是正文快照（原文以后再改，佳作不跟着变）；学生端「佳作」位读这份合集
+     ------------------------------------------------------------ */
+  function featId() { return 'F-' + (300 + Math.floor(Math.random() * 600)); }
+  function isFeatured(task, sub) {
+    var refId = task.id + '|' + sub.sid;
+    return DB.get('featured', []).some(function (f) { return f.refId === refId; });
+  }
+  /* 学生作文 ⇄ 佳作库 来回切 */
+  function toggleFeature(task, sub) {
+    var refId = task.id + '|' + sub.sid;
+    var list = DB.get('featured', []);
+    if (list.some(function (f) { return f.refId === refId; })) {
+      DB.set('featured', list.filter(function (f) { return f.refId !== refId; }));
+      sub.featured = false;
+      ADMIN.toast('已移出佳作库');
+    } else {
+      list.unshift({
+        id: featId(), from: 'essay', refId: refId, subject: task.subject, title: task.title,
+        author: stu(sub.sid).name, sid: sub.sid, words: sub.words,
+        tags: ['学生作文', task.subject], at: Date.now(), by: '我 · 作文批改入选',
+        note: sub.note || (sub.aiComment || '').slice(0, 70),
+        text: sub.text
+      });
+      DB.set('featured', list);
+      sub.featured = true;
+      ADMIN.toast('已收入佳作库，学生端「佳作」位可见');
+    }
+    DB.set('essays', DB.get('essays', []));
+    render();
+  }
+
+  function renderFeatured() {
+    var list = DB.get('featured', []);
+    document.getElementById('f-cnt').textContent = '· ' + list.length + ' 篇';
+    document.getElementById('feats').innerHTML = list.length ? list.map(function (f) {
+      var fromChip = f.from === 'manual'
+        ? '<span class="chip brand">' + I('pen') + '手动录入</span>'
+        : '<span class="chip ok">' + I('star') + '学生作文</span>';
+      return '<div class="card">' +
+        '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">' +
+          '<span style="font-size:14px;font-weight:600">' + E(f.title) + '</span>' + fromChip +
+          '<span class="chip">' + E(f.subject) + '</span></div>' +
+        '<div class="row-meta" style="margin-top:6px">' + E(f.author || '—') + ' · ' + (f.words || 0) +
+          ' 字/词 · 入选 ' + ADMIN.ago(f.at) + '</div>' +
+        '<p class="row-meta" style="margin:8px 0;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden">' +
+          E(f.text) + '</p>' +
+        (f.note ? '<div class="ai-bar" style="background:var(--surface-2);color:var(--text-2);align-items:flex-start;line-height:1.7">' +
+          I('sparkle') + '<span>' + E(f.note) + '</span></div>' : '') +
+        '<div class="btn-row" style="margin-top:12px">' +
+          '<button class="btn btn-sm" data-fact="view" data-fid="' + f.id + '">查看全文</button>' +
+          '<button class="btn btn-sm btn-ghost" data-fact="out" data-fid="' + f.id + '">移出佳作</button>' +
+          '<span class="row-meta" style="margin-left:auto">' + E(f.by || '') + '</span>' +
+        '</div></div>';
+    }).join('') : '<div class="card"><div class="empty"><div class="ico">' + I('star') + '</div>' +
+      '<div class="empty-title">佳作库还是空的</div><div class="empty-sub">点右上「录入佳作」，或在学生提交里点「设为佳作」</div></div></div>';
+  }
+
+  /* 佳作全文 */
+  function openFeat(f) {
+    ADMIN.drawer({
+      title: '佳作 · 《' + f.title + '》',
+      body: '<div class="chipline" style="margin-bottom:12px">' +
+          '<span class="pill">' + E(f.subject) + '</span>' +
+          '<span class="pill">' + E(f.author || '—') + '</span>' +
+          '<span class="pill">' + (f.words || 0) + ' 字/词</span>' +
+          '<span class="chip ' + (f.from === 'manual' ? 'brand' : 'ok') + '">' +
+            (f.from === 'manual' ? '手动录入' : '学生作文') + '</span>' +
+        '</div>' +
+        '<div class="q-prev" style="line-height:1.95;white-space:pre-wrap">' + E(f.text) + '</div>' +
+        '<div class="flabel" style="margin-top:16px">推荐语（学生端会看到）</div>' +
+        '<div class="ai-bar" style="background:var(--surface-2);color:var(--text-2);align-items:flex-start;line-height:1.7">' +
+          I('sparkle') + '<span>' + E(f.note || '（未填推荐语）') + '</span></div>' +
+        '<div class="kv" style="margin-top:14px">' +
+          '<div class="kv-row"><div class="kv-k">入选时间</div><div class="kv-v">' + ADMIN.ago(f.at) + '</div></div>' +
+          '<div class="kv-row"><div class="kv-k">来源</div><div class="kv-v">' + E(f.by || '—') + '</div></div>' +
+          ((f.tags && f.tags.length) ? '<div class="kv-row"><div class="kv-k">标签</div><div class="kv-v">' +
+            E(f.tags.join(' · ')) + '</div></div>' : '') +
+        '</div>',
+      foot: '<button class="btn" data-x="no">关闭</button>',
+      onMount: function (d) { d.querySelector('[data-x="no"]').addEventListener('click', ADMIN.closeDrawer); }
+    });
+  }
+
+  /* 录入佳作（范文本 / 课外好文 / 手写整理） */
+  function openFeatAdd() {
+    ADMIN.drawer({
+      title: '录入佳作',
+      body: '<div class="form-grid">' +
+        '<div class="form-grid two">' +
+          '<div class="field"><label>标题<span class="req">*</span></label>' +
+            '<input class="inp" id="f-title" placeholder="如：那盏亮到很晚的台灯"></div>' +
+          '<div class="field"><label>科目</label><select class="sel" id="f-subject"><option>语文</option><option>英语</option></select></div>' +
+        '</div>' +
+        '<div class="form-grid two">' +
+          '<div class="field"><label>作者 / 来源</label>' +
+            '<input class="inp" id="f-author" placeholder="如：范文 · 满分作文选 / 小宇"></div>' +
+          '<div class="field"><label>字数（留空自动数）</label>' +
+            '<input class="inp" id="f-words" type="number" placeholder="自动"></div>' +
+        '</div>' +
+        '<div class="field"><label>正文<span class="req">*</span></label>' +
+          '<textarea class="ta" id="f-text" style="min-height:180px" placeholder="粘贴或手写全文…"></textarea></div>' +
+        '<div class="field"><label>推荐语（学生端佳作位会展示）</label>' +
+          '<textarea class="ta" id="f-note" placeholder="好在哪、可以学什么，一两句就够"></textarea></div>' +
+        '<div class="field"><label>标签（顿号或逗号分隔，可选）</label>' +
+          '<input class="inp" id="f-tags" placeholder="如：细节描写、以物写人"></div>' +
+        '</div>',
+      foot: '<button class="btn" data-x="no">取消</button><button class="btn btn-primary" data-x="ok">收入佳作库</button>',
+      onMount: function (d) {
+        d.querySelector('[data-x="no"]').addEventListener('click', ADMIN.closeDrawer);
+        d.querySelector('[data-x="ok"]').addEventListener('click', function () {
+          var title = d.querySelector('#f-title').value.trim();
+          var text = d.querySelector('#f-text').value.trim();
+          if (!title) { ADMIN.toast('请填写标题', 'warn'); return; }
+          if (!text) { ADMIN.toast('正文不能为空', 'warn'); return; }
+          var raw = d.querySelector('#f-words').value;
+          var list = DB.get('featured', []);
+          list.unshift({
+            id: featId(), from: 'manual', refId: null,
+            subject: d.querySelector('#f-subject').value, title: title,
+            author: d.querySelector('#f-author').value.trim() || '未署名',
+            sid: null, words: +raw || text.replace(/\s/g, '').length,
+            tags: d.querySelector('#f-tags').value.split(/[,，、\s]+/).filter(Boolean),
+            at: Date.now(), by: '我 · 手动录入',
+            note: d.querySelector('#f-note').value.trim(),
+            text: text
+          });
+          DB.set('featured', list);
+          ADMIN.closeDrawer();
+          ADMIN.toast('已收入佳作库');
+          render();
+        });
+      }
+    });
+  }
+
+  /* ---------- 复核 / 查看抽屉 ---------- */
+  function openSub(task, sub) {
+    var s = stu(sub.sid);
+    var editable = sub.status === '待复核';
+    ADMIN.drawer({
+      title: E(s.name) + ' · 《' + task.title + '》',
+      body:
+        '<div class="chipline" style="margin-bottom:12px">' +
+          '<span class="pill">AI 评分 <b>' + sub.aiScore + '</b></span>' +
+          '<span class="pill">字数 <b>' + sub.words + '</b></span>' +
+          '<span class="pill">要求 ≥ <b>' + task.minWords + '</b></span>' +
+          '<span class="chip ' + (editable ? 'warn' : 'ok') + '">' + E(sub.status) + '</span>' +
+        '</div>' +
+        '<div class="flabel">AI 采分点核对</div>' +
+        '<div class="card tight" style="margin-bottom:12px">' +
+          (sub.aiPoints || []).map(function (p) {
+            return '<div class="row" style="padding:8px 2px"><span class="tl-dot" style="padding-top:5px">' +
+              '<i class="' + (p.ok ? 'ok' : 'danger') + '"></i></span>' +
+              '<div class="row-main" style="font-size:13px">' + E(p.label) + '</div>' +
+              '<span class="chip ' + (p.ok ? 'ok' : 'danger') + '">' + (p.ok ? '达成' : '未达成') + '</span></div>';
+          }).join('') + '</div>' +
+        '<div class="flabel">学生原文</div>' +
+        '<div class="q-prev" style="margin-bottom:12px;line-height:1.9">' + E(sub.text) + '</div>' +
+        '<div class="flabel">AI 点评</div>' +
+        '<div class="ai-bar" style="background:var(--surface-2);color:var(--text-2);align-items:flex-start;line-height:1.7">' +
+          ADMIN.icon('sparkle') + '<span>' + E(sub.aiComment) + '</span></div>' +
+        (editable ?
+          '<div class="form-grid" style="margin-top:14px">' +
+          '<div class="form-grid two">' +
+            '<div class="field"><label>最终评分</label><input class="inp" id="r-score" type="number" value="' + sub.aiScore + '" min="0" max="100"></div>' +
+            '<div class="field"><label>复核结论</label><div class="seg" id="r-st">' +
+              '<button type="button" data-val="已通过" class="on">通过</button>' +
+              '<button type="button" data-val="退回重写">退回重写</button></div></div>' +
+          '</div>' +
+          '<div class="field"><label>补充点评（会展示在 AI 点评下方）</label>' +
+            '<textarea class="ta" id="r-note" placeholder="写一句你自己的鼓励或建议…"></textarea></div>' +
+          '</div>'
+          :
+          '<div class="kv" style="margin-top:6px">' +
+          '<div class="kv-row"><div class="kv-k">复核人</div><div class="kv-v">' + E(sub.reviewer || '—') + '</div></div>' +
+          '<div class="kv-row"><div class="kv-k">复核时间</div><div class="kv-v">' + (sub.reviewedAt ? ADMIN.ago(sub.reviewedAt) : '—') + '</div></div>' +
+          (sub.note ? '<div class="kv-row"><div class="kv-k">补充点评</div><div class="kv-v">' + E(sub.note) + '</div></div>' : '') +
+          '</div>'),
+      foot: editable
+        ? '<button class="btn" data-x="no">取消</button><button class="btn btn-ok" data-x="ok">确认并同步给学生</button>'
+        : '<button class="btn" data-x="no">关闭</button>',
+      onMount: function (d) {
+        ADMIN.seg('#r-st');
+        d.querySelector('[data-x="no"]').addEventListener('click', ADMIN.closeDrawer);
+        var ok = d.querySelector('[data-x="ok"]');
+        if (ok) ok.addEventListener('click', function () {
+          var st = ADMIN.segVal(d.querySelector('#r-st')) || '已通过';
+          sub.aiScore = +d.querySelector('#r-score').value || sub.aiScore;
+          sub.status = st;
+          sub.reviewer = '我';
+          sub.reviewedAt = Date.now();
+          sub.note = d.querySelector('#r-note').value.trim();
+          DB.set('essays', DB.get('essays', []));
+          var logs = DB.get('logs', []);
+          logs.unshift({ at: Date.now(), who: '我', act: st === '已通过' ? '通过' : '退回', target: task.id + ' · ' + s.name, note: '作文复核 · ' + sub.aiScore + ' 分' });
+          DB.set('logs', logs);
+          ADMIN.closeDrawer();
+          ADMIN.toast(st === '已通过' ? '已同步给学生' : '已退回，学生端会看到重写提示');
+          render();
+        });
+      }
+    });
+  }
+
+  /* 提交卡上的索引 → { task, sub }（卡片每次重渲染，按同一排序回取） */
+  function pickSub(i) {
+    var arr = [];
+    DB.get('essays', []).forEach(function (t) {
+      (t.subs || []).forEach(function (s) { arr.push({ task: t, sub: s }); });
+    });
+    arr.sort(function (a, b) { return b.sub.at - a.sub.at; });
+    return arr[i];
+  }
+
+  document.getElementById('subs').addEventListener('click', function (e) {
+    var fe = e.target.closest('[data-feat]');
+    if (fe) {
+      e.stopPropagation();
+      var x1 = pickSub(+fe.getAttribute('data-feat'));
+      if (x1) toggleFeature(x1.task, x1.sub);
+      return;
+    }
+    var b = e.target.closest('[data-open]');
+    if (!b) return;
+    e.stopPropagation();
+    var x = pickSub(+b.getAttribute('data-open'));
+    if (x) openSub(x.task, x.sub);
+  });
+
+  /* 佳作库事件 */
+  document.getElementById('feats').addEventListener('click', function (e) {
+    var b = e.target.closest('[data-fact]');
+    if (!b) return;
+    var fid = b.getAttribute('data-fid');
+    var f = DB.get('featured', []).filter(function (x) { return x.id === fid; })[0];
+    if (!f) return;
+    if (b.getAttribute('data-fact') === 'view') { openFeat(f); return; }
+    ADMIN.confirm({
+      title: '移出佳作库？', danger: true, ok: '移出',
+      text: '《' + f.title + '》将不再出现在学生端「佳作」位。' +
+            (f.from === 'essay' ? '原始作文提交与批改结果不受影响。' : ''),
+      onOk: function () {
+        DB.set('featured', DB.get('featured', []).filter(function (x) { return x.id !== fid; }));
+        if (f.from === 'essay' && f.refId) {          /* 同步清掉提交上的入选标记 */
+          DB.get('essays', []).forEach(function (t) {
+            (t.subs || []).forEach(function (s) { if (t.id + '|' + s.sid === f.refId) s.featured = false; });
+          });
+          DB.set('essays', DB.get('essays', []));
+        }
+        ADMIN.toast('已移出佳作库');
+        render();
+      }
+    });
+  });
+  document.getElementById('add-feat').addEventListener('click', openFeatAdd);
+  document.getElementById('add-feat2').addEventListener('click', openFeatAdd);
+
+  /* ---------- 任务表事件 ---------- */
+  document.getElementById('t-rows').addEventListener('click', function (e) {
+    var b = e.target.closest('button[data-act]');
+    if (!b) return;
+    var tr = e.target.closest('tr');
+    var essays = DB.get('essays', []);
+    var t = essays.filter(function (x) { return x.id === tr.getAttribute('data-id'); })[0];
+    if (!t) return;
+    var act = b.getAttribute('data-act');
+    if (act === 'pub') {
+      t.published = !t.published;
+      if (t.published && !t.students.length) t.students = students.map(function (s) { return s.id; });
+      DB.set('essays', essays);
+      ADMIN.toast(t.published ? '已发布到「' + (t.students.map(function (id) { return stu(id).name; }).join('、') || '全部学生') + '」' : '已下架');
+      render();
+    }
+    if (act === 'del') {
+      ADMIN.confirm({
+        title: '删除作文任务？', danger: true, ok: '删除',
+        text: '「' + t.title + '」及其提交记录将从原型数据中移除。',
+        onOk: function () { DB.set('essays', essays.filter(function (x) { return x.id !== t.id; })); ADMIN.toast('已删除'); render(); }
+      });
+    }
+  });
+
+  /* ---------- 新建任务 ---------- */
+  document.getElementById('add').addEventListener('click', function () {
+    ADMIN.drawer({
+      title: '新建作文任务',
+      body: '<div class="form-grid">' +
+        '<div class="form-grid two">' +
+          '<div class="field"><label>题目<span class="req">*</span></label><input class="inp" id="n-title" placeholder="如：那一次，我读懂了父亲"></div>' +
+          '<div class="field"><label>科目</label><select class="sel" id="n-subject"><option>语文</option><option>英语</option></select></div>' +
+        '</div>' +
+        '<div class="form-grid two">' +
+          '<div class="field"><label>最少字数 / 词数</label><input class="inp" id="n-min" type="number" value="600"></div>' +
+          '<div class="field"><label>截止时间</label><input class="inp" id="n-due" type="datetime-local" step="600"></div>' +
+        '</div>' +
+        '<div class="field"><label>写作要求 / 采分点（每行一条）</label>' +
+          '<textarea class="ta" id="n-points">围绕一件事展开&#10;有 2 处以上细节描写&#10;结尾有感悟升华</textarea></div>' +
+        '<label class="switch"><input type="checkbox" id="n-guide" checked><span class="track"></span>' +
+          '<span class="sw-txt">提供写作引导（提纲 + 好词好句），点评先讲结构，分数弱化</span></label>' +
+        '</div>',
+      foot: '<button class="btn" data-x="no">取消</button><button class="btn btn-primary" data-x="ok">保存为草稿</button>',
+      onMount: function (d) {
+        var dueEl = d.querySelector('#n-due');
+        dueEl.value = defDue();                       /* 默认 3 天后 20:00 */
+        d.querySelector('[data-x="no"]').addEventListener('click', ADMIN.closeDrawer);
+        d.querySelector('[data-x="ok"]').addEventListener('click', function () {
+          var title = d.querySelector('#n-title').value.trim();
+          if (!title) { ADMIN.toast('请填写题目', 'warn'); return; }
+          if (dueEl.value && new Date(dueEl.value).getTime() < Date.now()) {
+            ADMIN.toast('截止时间不能早于现在', 'warn'); dueEl.focus(); return;
+          }
+          if (!dueEl.value) { ADMIN.toast('请选择截止时间', 'warn'); dueEl.focus(); return; }
+          var essays = DB.get('essays', []);
+          essays.push({
+            id: 'E-' + (320 + essays.length + Math.floor(Math.random() * 60)),
+            subject: d.querySelector('#n-subject').value, title: title,
+            minWords: +d.querySelector('#n-min').value || 600,
+            due: fmtDue(dueEl.value), dueAt: dueEl.value,
+            published: false, students: [],
+            points: d.querySelector('#n-points').value.split('\n').map(function (x) { return x.trim(); }).filter(Boolean),
+            subs: []
+          });
+          DB.set('essays', essays);
+          ADMIN.closeDrawer(); ADMIN.toast('已保存草稿，点「发布」下发给全部学生'); render();
+        });
+      }
+    });
+  });
+
+  render();
+})();
+</script>
+</body>
+</html>

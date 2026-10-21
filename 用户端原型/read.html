@@ -1,0 +1,279 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="light">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#F5F6F8">
+<title>阅读正文 · 学迹</title>
+<script>document.documentElement.classList.add('js-on');</script>
+<link rel="stylesheet" href="style.css?v=20261021a">
+</head>
+<body data-page="read">
+
+<div class="app">
+<main class="main">
+
+  <header class="topbar" id="topbar"></header>
+
+  <div class="content">
+    <div class="rdprog" aria-hidden="true"><i id="rdprog-i"></i></div>
+
+    <div class="reader">
+
+      <!-- 顶栏：回目录 · 字号 -->
+      <div class="reader-top">
+        <a class="btn-ghost" id="btn-back" href="reading.html">‹ 目录</a>
+        <div class="reader-fs" role="group" aria-label="正文字号">
+          <button type="button" id="fs-minus" aria-label="缩小字号">A−</button>
+          <button type="button" id="fs-plus" aria-label="放大字号">A＋</button>
+        </div>
+      </div>
+
+      <!-- 篇目头 -->
+      <h1 class="reader-title" id="r-title"></h1>
+      <p class="reader-meta" id="r-meta"></p>
+      <div class="reader-brief" id="r-brief"></div>
+
+      <!-- 正文（原型为演示文本；正式版由管理端下发，此处只管排版与交互） -->
+      <article class="reader-body" id="r-body"></article>
+
+      <!-- 底部：上一篇 / 读完打卡 / 下一篇 -->
+      <div class="reader-foot">
+        <button class="btn-ghost" id="btn-prev" type="button">‹ 上一篇</button>
+        <button class="btn-brand" id="btn-finish" type="button">读完这篇 · 打卡</button>
+        <button class="btn-ghost" id="btn-next" type="button">下一篇 ›</button>
+      </div>
+
+    </div>
+  </div>
+</main>
+</div>
+
+<!-- 每篇一问：读完打卡后弹出（本书配题才有；题由管理端配置） -->
+<div class="askmask" id="askmask" hidden>
+  <div class="askpop" role="dialog" aria-modal="true" aria-labelledby="ap-title">
+    <p class="askpop-t" id="ap-title"></p>
+    <p class="ask-q" id="ap-q"></p>
+    <textarea class="q-ta" id="ap-ta" rows="3" placeholder="写两句话，说说你的理解…"></textarea>
+    <div class="ask-foot">
+      <span class="ask-count" id="ap-count">0 字</span>
+      <button class="btn-brand" id="ap-send" type="button">交答案</button>
+    </div>
+    <div class="ask-result" id="ap-result" hidden>
+      <div class="ask-head">
+        <span id="ap-score"></span>
+      </div>
+      <div class="ask-pts" id="ap-pts"></div>
+      <p class="ask-ref" id="ap-ref"></p>
+    </div>
+    <div class="askpop-foot">
+      <button class="btn-ghost" id="ap-skip" type="button">先不答，回目录</button>
+      <button class="btn-brand" id="ap-next" type="button" hidden>下一章 ›</button>
+    </div>
+  </div>
+</div>
+
+<script src="books.js?v=20261021a"></script>
+<script src="fx.js?v=20261021a"></script>
+<script src="app.js?v=20261021a"></script>
+<script>
+/* ============================================================
+   阅读正文页：目录点进来，读完打卡
+   本书配题（qEnabled）且本篇有题时，打卡后弹出「每篇一问」
+   正文为演示占位文本（版权文本不能内置）；正式版由服务端下发
+   ============================================================ */
+
+function escHtml(s) {
+  return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;')
+                  .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+var toastTimer = 0;
+function toast(msg) {
+  var el = document.getElementById('toast');
+  if (!el) return;
+  el.textContent = msg;
+  el.classList.add('on');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(function () { el.classList.remove('on'); }, 2200);
+}
+
+/* ---------- 解析参数：?ch=n ---------- */
+var S = RD.load();
+var BOOK = BOOKS[S.cur];
+var BP = S.books[S.cur];
+var CH = parseInt((location.search.match(/[?&]ch=(\d+)/) || [])[1], 10);
+if (!CH || CH < 1 || CH > BOOK.total) CH = Math.min(BP.done + 1, BOOK.total);
+
+var unit = BOOK.units[CH - 1];
+/* 本书是否给这一篇配了题（管理端：书级开关 qEnabled + 篇级题目） */
+function askOf(n) { return (BOOK.qEnabled && BOOK.asks && BOOK.asks[n]) || null; }
+
+/* ---------- 渲染 ---------- */
+function render() {
+  document.title = unit.t + ' · 阅读 · 学迹';
+  document.getElementById('r-title').textContent = unit.t;
+  document.getElementById('r-meta').textContent =
+    '《' + BOOK.title + '》· ' + escHtml(BOOK.author) +
+    ' · ' + BOOK.unitName + ' ' + CH + ' / ' + BOOK.total +
+    (BP.done >= CH ? ' · 已读 ✓' : '');
+
+  var brief = document.getElementById('r-brief');
+  brief.textContent = unit.b;
+  brief.hidden = !unit.b;
+
+  /* 演示正文：正式版为服务端下发的版权文本，这里生成占位段落 */
+  var paras = '';
+  paras += '<p class="demo">（原型演示文本 · 正式版这里显示由管理端下发的正版章节内容，此页只负责舒适的排版与阅读交互。）</p>';
+  for (var i = 1; i <= 6; i++) {
+    paras += '<p>这里是《' + BOOK.title + '》' + unit.t.replace(/ · /g, '，') +
+             '的正文第' + '一二三四五六'.charAt(i - 1) + '段。放上占位文字是为了看真实的阅读版面：' +
+             '段首空两格、两倍行距、合适的字号与页宽，读久了眼睛不累。</p>';
+    if (i === 3) {
+      paras += '<p class="demo">（正式版可在此插入插图 / 批注提示 / 生词注释，样式已预留。）</p>';
+    }
+  }
+  document.getElementById('r-body').innerHTML = paras;
+
+  /* 已读状态：主按钮变「下一篇」，未读才显示打卡 */
+  var fin = document.getElementById('btn-finish');
+  if (BP.done >= CH) {
+    fin.textContent = '本篇已读 ✓ · 记一下打卡';
+    fin.className = 'btn-ghost';
+  } else {
+    fin.textContent = '读完这篇 · 打卡';
+    fin.className = 'btn-brand';
+  }
+  document.getElementById('btn-prev').disabled = (CH <= 1);
+  document.getElementById('btn-next').disabled = (CH >= BOOK.total);
+}
+
+/* ---------- 字号（存本机） ---------- */
+function applyFs() {
+  document.getElementById('r-body').style.fontSize = FS + 'px';
+  try { localStorage.setItem('xj-rfs', String(FS)); } catch (e) {}
+}
+var FS = 17;
+try { FS = Math.min(24, Math.max(14, parseInt(localStorage.getItem('xj-rfs'), 10) || 17)); } catch (e) {}
+document.getElementById('fs-minus').addEventListener('click', function () { FS = Math.max(14, FS - 1); applyFs(); });
+document.getElementById('fs-plus').addEventListener('click',  function () { FS = Math.min(24, FS + 1); applyFs(); });
+
+/* ---------- 阅读进度条 ---------- */
+window.addEventListener('scroll', function () {
+  var h = document.documentElement;
+  var max = h.scrollHeight - h.clientHeight;
+  var p = max > 0 ? Math.min(100, Math.round(h.scrollTop / max * 100)) : 0;
+  document.getElementById('rdprog-i').style.width = p + '%';
+}, { passive: true });
+
+/* ---------- 翻页 ---------- */
+document.getElementById('btn-prev').addEventListener('click', function () {
+  if (CH > 1) location.href = 'read.html?ch=' + (CH - 1);
+});
+document.getElementById('btn-next').addEventListener('click', function () {
+  if (CH < BOOK.total) location.href = 'read.html?ch=' + (CH + 1);
+});
+
+/* ---------- 每篇一问：弹窗 + 采分点判分 ---------- */
+var apEl = document.getElementById('askmask');
+var apTa = document.getElementById('ap-ta');
+
+function openAsk() {
+  var ask = askOf(CH);
+  if (!ask) return false;
+  var ans = BP.answers[CH];
+
+  document.getElementById('ap-title').textContent =
+    '每' + BOOK.unitName + '一问 · ' + BOOK.unitName + ' ' + CH;
+  document.getElementById('ap-q').textContent = ask.q;
+  apTa.value = ans ? ans.text : '';
+  apTa.readOnly = !!ans;
+  apCount();
+  document.getElementById('ap-result').hidden = true;
+  setAskMode(ans ? 'done' : 'input');
+  if (ans) fillAskResult(ans);
+  apEl.hidden = false;
+  return true;
+}
+/* 弹窗两种形态：input=答题中 / done=已答（只展示答案 + 下一章按钮） */
+function setAskMode(mode) {
+  var done = mode === 'done';
+  document.querySelector('.ask-foot').hidden = done;      /* 输入区 + 交答案 收起 */
+  document.getElementById('ap-skip').hidden = done;
+  var nx = document.getElementById('ap-next');
+  nx.hidden = !done;
+  nx.textContent = CH < BOOK.total
+    ? '下一' + BOOK.unitName + ' ›'
+    : '回目录 · 全书读完';
+}
+function closeAskGoBack() {
+  apEl.hidden = true;
+  location.href = 'reading.html';
+}
+function apCount() {
+  var n = apTa.value.replace(/\s/g, '').length;
+  document.getElementById('ap-count').textContent = n + ' 字';
+}
+apTa.addEventListener('input', apCount);
+
+function fillAskResult(r) {
+  var ask = askOf(CH);
+  var okAll = r.hits === r.total;
+  document.getElementById('ap-score').innerHTML =
+    '<span class="chip ' + (okAll ? 'ok' : 'warn') + '">命中采分点 ' + r.hits + ' / ' + r.total + '</span>' +
+    (okAll ? '<span style="font-size:12.5px;color:var(--ok);font-weight:500">答得挺全</span>' : '');
+  var pts = '';
+  ask.points.forEach(function (p, i) {
+    var hit = (r.hitIdx || []).indexOf(i) !== -1;
+    pts += '<span class="chip ' + (hit ? 'ok' : 'danger') + '">' + (hit ? '✓ ' : '✗ ') + escHtml(p.label) + '</span>';
+  });
+  document.getElementById('ap-pts').innerHTML = pts;
+  document.getElementById('ap-ref').innerHTML = '<b style="font-weight:500">参考答案：</b>' + escHtml(ask.ref);
+  document.getElementById('ap-result').hidden = false;
+}
+function gradeAsk(text) {
+  var ask = askOf(CH), hitIdx = [], hits = 0;
+  ask.points.forEach(function (p, i) {
+    for (var j = 0; j < p.k.length; j++) {
+      if (text.indexOf(p.k[j]) !== -1) { hitIdx.push(i); hits++; break; }
+    }
+  });
+  return { text: text, hits: hits, total: ask.points.length, hitIdx: hitIdx, ts: Date.now() };
+}
+document.getElementById('ap-send').addEventListener('click', function () {
+  var text = apTa.value.trim();
+  if (!text) { toast('先写两句你的理解，再交答案'); apTa.focus(); return; }
+  var r = gradeAsk(text);
+  BP.answers[CH] = r;
+  RD.save(S);
+  apTa.readOnly = true;
+  fillAskResult(r);
+  setAskMode('done');
+  if (window.FX) FX.burstFrom(this, 9);
+  toast(r.hits === r.total ? '全中！采分点 ' + r.hits + '/' + r.total : '收到 · 命中 ' + r.hits + '/' + r.total + ' 个采分点');
+});
+document.getElementById('ap-next').addEventListener('click', function () {
+  location.href = CH < BOOK.total ? 'read.html?ch=' + (CH + 1) : 'reading.html';
+});
+document.getElementById('ap-skip').addEventListener('click', closeAskGoBack);
+
+/* ---------- 读完打卡：记进度 → 配题则弹一问，否则回目录 ---------- */
+document.getElementById('btn-finish').addEventListener('click', function () {
+  var already = BP.done >= CH;
+  RD.checkin(S, CH, 0);
+  BP = S.books[S.cur];
+  render();
+  if (window.FX) FX.burstFrom(this, already ? 8 : 14);
+  toast(already ? '打卡已记 · 今天读到' + BOOK.unitName + ' ' + CH
+                : '读完了！' + BOOK.unitName + ' ' + CH + ' 已打卡');
+
+  if (openAsk()) return;                        /* 有题：弹窗，答完/跳过再回目录 */
+  setTimeout(function () { location.href = 'reading.html'; }, 950);
+});
+
+applyFs();
+render();
+</script>
+
+<div class="q-toast" id="toast" role="status" aria-live="polite"></div>
+</body>
+</html>

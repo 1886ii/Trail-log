@@ -1,0 +1,10 @@
+# 调试产物：本地截图、自测页、临时脚本，不进仓库
+_*
+*.png
+*.jpg
+*.jpeg
+
+# 工具与系统文件
+.workbuddy/
+.DS_Store
+Thumbs.db

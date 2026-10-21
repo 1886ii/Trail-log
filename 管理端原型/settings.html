@@ -1,0 +1,212 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="light">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#F5F6F8">
+<title>设置 · 学迹管理端</title>
+<link rel="stylesheet" href="style.css?v=20261021c">
+</head>
+<body data-page="settings" data-title="设置" data-sub="AI 阈值 · 提醒 · 周报海报 · 数据">
+
+<div class="app">
+  <aside class="sb" id="sb"></aside>
+  <div class="main">
+    <header class="tb" id="tb"></header>
+    <div class="content">
+
+      <div class="split-l">
+
+        <div>
+          <section class="sec">
+            <div class="sec-title">管理端账号</div>
+            <div class="card" id="acc"></div>
+          </section>
+
+          <section class="sec">
+            <div class="sec-title">AI 与审核</div>
+            <div class="card"><div class="form-grid" id="ai"></div></div>
+          </section>
+
+          <section class="sec">
+            <div class="sec-title">任务与提醒</div>
+            <div class="card"><div class="form-grid" id="task"></div></div>
+          </section>
+        </div>
+
+        <div>
+          <section class="sec">
+            <div class="sec-title">周报海报 <span class="count">· 3:4 竖版已定案</span></div>
+            <div class="card"><div class="form-grid" id="poster"></div></div>
+          </section>
+
+          <section class="sec">
+            <div class="sec-title">数据 <span class="count">· 原型演示数据</span></div>
+            <div class="card">
+              <div class="kv" id="data"></div>
+              <div class="btn-row" style="margin-top:12px">
+                <button class="btn btn-sm btn-danger" id="reset">重置演示数据</button>
+              </div>
+              <p class="hint">重置会清掉你在原型里做过的所有改动（学生 / 题库 / 审核记录 / 书单…），恢复到初始演示状态。用户端的数据完全不受影响。</p>
+            </div>
+          </section>
+
+          <section class="sec">
+            <div class="sec-title">关于</div>
+            <div class="card">
+              <div class="kv">
+                <div class="kv-row"><div class="kv-k">版本</div><div class="kv-v">管理端原型 v0.1（2026-10-12）</div></div>
+                <div class="kv-row"><div class="kv-k">技术</div><div class="kv-v">纯 HTML/CSS/JS · 零框架 · 独立于用户端</div></div>
+                <div class="kv-row"><div class="kv-k">存储</div><div class="kv-v"><code>xjadmin-db</code> · 与用户端 <code>xj-*</code> 键完全隔离</div></div>
+                <div class="kv-row"><div class="kv-k">正式版</div><div class="kv-v">Spring Boot 3 + Spring AI · 数据进数据库</div></div>
+              </div>
+            </div>
+          </section>
+        </div>
+
+      </div>
+
+    </div>
+  </div>
+</div>
+
+<script src="demo.js?v=20261021c"></script>
+<script src="admin.js?v=20261021c"></script>
+<script>
+(function () {
+  var E = ADMIN.esc, I = ADMIN.icon;
+  var ses = ADMIN.session() || {};
+  var S = DB.get('settings', {});
+
+  /* ---------- 账号 ---------- */
+  document.getElementById('acc').innerHTML =
+    '<div style="display:flex;align-items:center;gap:14px">' +
+      '<span class="av lg c1">' + E((S.adminName || '妈').charAt(0)) + '</span>' +
+      '<div style="flex:1"><div style="font-size:15px;font-weight:600" id="s-name">' + E(S.adminName) + '</div>' +
+      '<div class="row-meta"><code>' + E(S.adminAccount) + '</code> · 管理员</div></div>' +
+      '<button class="btn btn-sm" id="edit-acc">改名</button>' +
+      '<button class="btn btn-sm btn-danger" id="logout">' + I('logout') + '退出登录</button>' +
+    '</div>';
+  document.getElementById('edit-acc').addEventListener('click', function () {
+    ADMIN.modal({
+      title: '管理端昵称',
+      body: '<div class="field"><label>昵称（显示在侧边栏）</label><input class="inp" id="m-name" value="' + E(S.adminName) + '"></div>',
+      foot: '<button class="btn" data-x="no">取消</button><button class="btn btn-primary" data-x="ok">保存</button>',
+      onMount: function (m) {
+        m.querySelector('[data-x="no"]').addEventListener('click', ADMIN.closeModal);
+        m.querySelector('[data-x="ok"]').addEventListener('click', function () {
+          S.adminName = m.querySelector('#m-name').value.trim() || S.adminName;
+          DB.set('settings', S);
+          ADMIN.closeModal(); ADMIN.toast('已保存'); setTimeout(function () { location.reload(); }, 300);
+        });
+      }
+    });
+  });
+  document.getElementById('logout').addEventListener('click', function () {
+    ADMIN.confirm({ title: '退出登录？', ok: '退出', text: '下次进入需要重新登录。', onOk: ADMIN.logout });
+  });
+
+  /* ---------- AI 与审核 ---------- */
+  function slider(id, label, val, min, max, step, fmt, onChange) {
+    return '<div class="field"><label>' + label + '</label>' +
+      '<div class="input-row"><input type="range" id="' + id + '" min="' + min + '" max="' + max + '" step="' + step + '" value="' + val + '" style="flex:1">' +
+      '<span class="pill" id="' + id + '-v"><b>' + fmt(val) + '</b></span></div>' +
+      '<div class="hint" id="' + id + '-h"></div></div>';
+  }
+  /* 模型与密钥挪到了「AI 中枢」，这里只留一行摘要 + 入口，避免两处都改 */
+  var ai = DB.get('ai', null);
+  var aiMode = ai && DB.AI_MODES[ai.mode] ? DB.AI_MODES[ai.mode].label : '自定义';
+  var aiToday = ai ? ai.usage.days[ai.usage.days.length - 1] : null;
+  document.getElementById('ai').innerHTML =
+    '<div class="ai-sum">' +
+      '<div class="ai-sum-l"><span class="chip brand">' + E(aiMode) + '档</span>' +
+        '<div><div class="ai-sum-h">当前工作模式 · ' + E(aiMode) + '</div>' +
+        '<div class="ai-sum-m">' + (ai ? ai.providers.filter(function (p) { return p.enabled; }).length : 0) + ' 家供应商 · 今日 ' +
+          (aiToday ? aiToday.calls.toLocaleString('zh-CN') + ' 次调用 · ¥' + aiToday.cost.toFixed(2) : '—') + '</div></div></div>' +
+      '<a class="btn btn-sm" href="ai.html">打开 AI 中枢 →</a>' +
+    '</div>' +
+    '<div class="hint" style="margin:-2px 0 4px">模型切换、API Key、用量与预算都在 AI 中枢里改 —— 这里不再重复放一套</div>' +
+    slider('m-th', 'AI 自动通过阈值（置信分）', S.autoPass, 0.7, 0.95, 0.05, function (v) { return v.toFixed(2); }) +
+    '<div class="field"><label>举报自动下架次数</label><select class="sel" id="m-report">' +
+      [2, 3, 5].map(function (n) { return '<option' + (S.reportDown === n ? ' selected' : '') + '>' + n + '</option>'; }).join('') + '</select></div>' +
+    '<div class="field"><label>每日科目轮换数</label><div class="seg" id="m-daily">' +
+      ['1', '2'].map(function (n) {
+        return '<button type="button" data-val="' + n + '" class="' + (String(S.dailySubjects) === n ? 'on' : '') + '">' + n + ' 科/天</button>';
+      }).join('') + '</div><div class="hint">建议 1–2 科：三科齐发容易坚持不下去</div></div>';
+
+  function bindSeg(id, key, get, apply) {
+    ADMIN.seg('#' + id, function (v) {
+      S[key] = get(v); DB.set('settings', S); ADMIN.toast('已保存'); if (apply) apply();
+    });
+  }
+  document.getElementById('m-th').addEventListener('input', function () {
+    S.autoPass = +this.value;
+    document.querySelector('#m-th-v b').textContent = (+this.value).toFixed(2);
+  });
+  document.getElementById('m-th').addEventListener('change', function () {
+    DB.set('settings', S);
+    document.getElementById('m-th-h').textContent = '保存成功 —— 新出题立即生效，已在审核队列里的不变';
+    ADMIN.toast('自动通过阈值已保存');
+  });
+  document.getElementById('m-report').addEventListener('change', function () {
+    S.reportDown = +this.value; DB.set('settings', S); ADMIN.toast('已保存');
+  });
+  bindSeg('m-daily', 'dailySubjects', function (v) { return +v; });
+
+  /* ---------- 任务与提醒 ---------- */
+  document.getElementById('task').innerHTML =
+    '<div class="field"><label>每晚提醒时间（发到家长手机）</label><input class="inp" id="k-notify" type="time" value="' + E(S.notifyAt) + '"></div>' +
+    '<div class="field"><label>安静时段（不发任何提醒）</label><input class="inp" id="k-quiet" value="' + E(S.quiet) + '"></div>' +
+    '<label class="switch"><input type="checkbox" id="k-checkin" ' + (S.checkIn ? 'checked' : '') + '><span class="track"></span>' +
+      '<span class="sw-txt">学生连续 3 天没打卡时给我发提醒</span></label>';
+  ['k-notify', 'k-quiet'].forEach(function (id) {
+    document.getElementById(id).addEventListener('change', function () {
+      S[id === 'k-notify' ? 'notifyAt' : 'quiet'] = this.value;
+      DB.set('settings', S); ADMIN.toast('已保存');
+    });
+  });
+  document.getElementById('k-checkin').addEventListener('change', function () {
+    S.checkIn = this.checked; DB.set('settings', S); ADMIN.toast('已保存');
+  });
+
+  /* ---------- 周报海报 ---------- */
+  document.getElementById('poster').innerHTML =
+    '<div class="field"><label>比例</label><div class="seg" id="p-ratio">' +
+      ['3:4'].map(function (v) { return '<button type="button" data-val="' + v + '" class="on">' + v + '</button>'; }).join('') +
+      '<button type="button" disabled style="opacity:.4">9:16（规划中）</button></div></div>' +
+    '<div class="field"><label>海报唯一的大数字（hero）</label><div class="seg" id="p-hero">' +
+      ['连续打卡天数', '本周学习时长', '掌握度提升'].map(function (v) {
+        return '<button type="button" data-val="' + v + '" class="' + (S.heroNum === v ? 'on' : '') + '">' + v + '</button>';
+      }).join('') + '</div><div class="hint">定案：海报只放一个 hero 数字，一眼记住这一周</div></div>' +
+    '<label class="switch"><input type="checkbox" id="p-score" ' + (S.showScore ? 'checked' : '') + '><span class="track"></span>' +
+      '<span class="sw-txt">在海报上显示具体分数</span></label>' +
+      '<div class="hint">当前定案：不显示分数，避免比较焦虑</div>';
+  bindSeg('p-hero', 'heroNum', function (v) { return v; });
+  document.getElementById('p-score').addEventListener('change', function () {
+    S.showScore = this.checked; DB.set('settings', S);
+    ADMIN.toast(this.checked ? '海报将显示分数' : '海报不显示分数');
+  });
+
+  /* ---------- 数据 ---------- */
+  var db = DB.all();
+  document.getElementById('data').innerHTML =
+    '<div class="kv-row"><div class="kv-k">学生</div><div class="kv-v">' + db.students.length + ' 人</div></div>' +
+    '<div class="kv-row"><div class="kv-k">题库</div><div class="kv-v">' + db.qbank.length + ' 道（待审 ' +
+      db.qbank.filter(function (q) { return q.status === 'pending'; }).length + '）</div></div>' +
+    '<div class="kv-row"><div class="kv-k">书目 / 词条</div><div class="kv-v">' + db.books.length + ' 本 · ' + db.words.length + ' 词</div></div>' +
+    '<div class="kv-row"><div class="kv-k">作文任务</div><div class="kv-v">' + db.essays.length + ' 个 · 提交 ' +
+      db.essays.reduce(function (n, t) { return n + t.subs.length; }, 0) + ' 篇</div></div>' +
+    '<div class="kv-row"><div class="kv-k">记录</div><div class="kv-v">' + db.posts.length + ' 条</div></div>';
+
+  document.getElementById('reset').addEventListener('click', function () {
+    ADMIN.confirm({
+      title: '重置演示数据？', danger: true, ok: '重置',
+      text: '管理端原型里你做过的所有改动会被清掉，恢复到初始演示状态。',
+      note: '用户端原型（用户端文件夹）的数据完全不受影响 —— 两边存储各自独立。',
+      onOk: function () { DB.reset(); ADMIN.toast('已重置'); setTimeout(function () { location.reload(); }, 400); }
+    });
+  });
+})();
+</script>
+</body>
+</html>

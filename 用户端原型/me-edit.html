@@ -1,0 +1,470 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="light">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#F5F6F8">
+<title>编辑资料 · 学迹</title>
+<script>document.documentElement.classList.add('js-on');</script>
+<link rel="stylesheet" href="style.css?v=20261021a">
+</head>
+<body data-page="meEdit">
+
+<div class="app">
+<main class="main">
+
+  <header class="topbar" id="topbar"></header>
+
+  <div class="content">
+
+    <a class="pf-back reveal" href="me.html">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"
+           stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <path d="M14.6 5.6 8.2 12l6.4 6.4"/>
+      </svg>
+      返回个人中心
+    </a>
+
+    <!-- ============ 展示身份 ============ -->
+    <section class="section reveal">
+      <div class="panel">
+        <h2 class="pf-gtitle">展示身份</h2>
+
+        <div class="pf-field">
+          <span class="pf-label">头像</span>
+          <div class="pf-ctrl" style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+            <span class="avatar" id="edAvaTxt"
+                  style="width:44px;height:44px;font-size:17px">宇</span>
+            <img id="edAvaImg" alt="头像" hidden
+                 style="width:44px;height:44px;border-radius:50%;object-fit:cover">
+            <button class="btn-ghost" type="button" id="edAvaBtn">更换头像</button>
+            <span class="pf-hint" style="margin:0">正方形裁切后存 512×512，约 40KB</span>
+          </div>
+        </div>
+
+        <div class="pf-field">
+          <label class="pf-label" for="edNick">昵称<span class="req">*</span></label>
+          <div class="pf-ctrl">
+            <input class="pf-input" id="edNick" type="text" maxlength="12"
+                   placeholder="例：小宇" autocomplete="off">
+            <p class="pf-hint">最长 12 个字，家长在管理端也靠它认出你</p>
+          </div>
+        </div>
+
+        <div class="pf-field">
+          <label class="pf-label" for="edReal">真实姓名</label>
+          <div class="pf-ctrl">
+            <input class="pf-input" id="edReal" type="text" maxlength="12"
+                   placeholder="选填，只有家长能看到" autocomplete="off">
+          </div>
+        </div>
+
+        <div class="pf-field">
+          <span class="pf-label">性别</span>
+          <div class="pf-ctrl">
+            <div class="pf-seg" id="edGender">
+              <button type="button" data-v="男">男</button>
+              <button type="button" data-v="女">女</button>
+              <button type="button" data-v="不填">不填</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="pf-field">
+          <label class="pf-label" for="edSign">个性签名</label>
+          <div class="pf-ctrl">
+            <textarea class="pf-input" id="edSign" maxlength="40"
+                      placeholder="不填就自动显示「年级 · 教材 · 主攻科目」"></textarea>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============ 学业档案 ============ -->
+    <section class="section reveal">
+      <div class="panel">
+        <h2 class="pf-gtitle">学业档案 · 决定出题的难度与范围</h2>
+
+        <div class="pf-field">
+          <span class="pf-label">年级<span class="req">*</span></span>
+          <div class="pf-ctrl">
+            <div class="pf-seg" id="edGrade">
+              <button type="button" data-v="初一">初一</button>
+              <button type="button" data-v="初二">初二</button>
+              <button type="button" data-v="初三">初三</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="pf-field">
+          <span class="pf-label">学期<span class="req">*</span></span>
+          <div class="pf-ctrl">
+            <div class="pf-seg" id="edTerm">
+              <button type="button" data-v="上学期">上学期</button>
+              <button type="button" data-v="下学期">下学期</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="pf-field">
+          <span class="pf-label">教材版本<span class="req">*</span></span>
+          <div class="pf-ctrl">
+            <div class="pf-chips" id="edBook">
+              <button type="button" class="pf-chip" data-v="人教版">人教版</button>
+              <button type="button" class="pf-chip" data-v="北师大版">北师大版</button>
+              <button type="button" class="pf-chip" data-v="苏科版">苏科版</button>
+              <button type="button" class="pf-chip" data-v="沪科版">沪科版</button>
+              <button type="button" class="pf-chip" data-v="外研版">外研版</button>
+            </div>
+            <p class="pf-hint">决定出题素材贴着哪个版本的课本</p>
+          </div>
+        </div>
+
+        <div class="pf-field pf-field-wide">
+          <span class="pf-label">科目与目标<span class="req">*</span></span>
+          <div class="pf-ctrl">
+            <div class="sb-head">
+              <span>科目</span><span>重点</span><span>练习</span>
+              <span>当前进度</span><span>目标分</span>
+            </div>
+            <div class="sb-list" id="sbList"></div>
+
+            <div class="sb-total">
+              <span class="sb-total-lbl">目标总分</span>
+              <b id="sbTotal">0</b><i>分</i>
+              <span class="sb-total-note" id="sbNote"></span>
+            </div>
+
+            <p class="pf-hint">
+              「练习」决定每天出不出的这科的题；「重点」只是把它的比重调高，不出题的科目标了也不生效。
+              进度留空则按学期自动推算。<br>
+              目标分<b>单科满分 150</b>，填了就留在成绩曲线里当该科的目标线；填超 150 会被清空。
+              这一块改完<b>立即保存</b>，不用等下面按钮。
+            </p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============ 目标与节奏 ============ -->
+    <section class="section reveal">
+      <div class="panel">
+        <h2 class="pf-gtitle">学习节奏 · 决定计划的松紧</h2>
+
+        <div class="pf-field pf-field-wide">
+          <label class="pf-label" for="edExam">大考日期</label>
+          <div class="pf-ctrl">
+            <input class="pf-input" id="edExam" type="date">
+            <p class="pf-hint">中考 / 期末 / 月考，填了才能按剩余天数倒排计划。各科要考到多少分，在上面「科目与目标」里逐科填。</p>
+          </div>
+        </div>
+
+        <div class="pf-field">
+          <label class="pf-label" for="edStart">开始时间</label>
+          <div class="pf-ctrl">
+            <input class="pf-input" id="edStart" type="time">
+          </div>
+        </div>
+
+        <div class="pf-field">
+          <span class="pf-label">每日题量</span>
+          <div class="pf-ctrl">
+            <div class="pf-seg" id="edCount">
+              <button type="button" data-v="5">5 题</button>
+              <button type="button" data-v="10">10 题</button>
+              <button type="button" data-v="15">15 题</button>
+              <button type="button" data-v="20">20 题</button>
+            </div>
+            <p class="pf-hint">按科目算，每天只轮 1–2 科</p>
+          </div>
+        </div>
+
+        <div class="pf-field">
+          <span class="pf-label">每周休息</span>
+          <div class="pf-ctrl">
+            <div class="pf-seg" id="edRest">
+              <button type="button" data-v="周六">周六</button>
+              <button type="button" data-v="周日">周日</button>
+              <button type="button" data-v="不休息">不休息</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <p class="pf-err" id="edErr" hidden></p>
+
+    <div class="pf-savebar reveal">
+      <button class="btn-brand" type="button" id="edSave" style="flex:1">保存并返回</button>
+      <a class="btn-ghost" href="me.html">取消</a>
+    </div>
+
+  </div>
+</main>
+</div>
+
+<script src="fx.js?v=20261021a"></script>
+<script src="app.js?v=20261021a"></script>
+<script>
+(function () {
+  var p = readProfile();
+
+  /* ---------- 头像 ---------- */
+  var avaTxt = document.getElementById('edAvaTxt');
+  var avaImg = document.getElementById('edAvaImg');
+  var avaBtn = document.getElementById('edAvaBtn');
+
+  function paintAvatar(src) {
+    if (src) { avaImg.src = src; avaImg.hidden = false; avaTxt.hidden = true; }
+    else { avaImg.hidden = true; avaImg.removeAttribute('src'); avaTxt.hidden = false; }
+  }
+  avaTxt.textContent = (p.nickname || '学').charAt(0);
+  paintAvatar(p.avatar);
+
+  avaBtn.addEventListener('click', function () {
+    changeAvatar(function (src) {
+      p.avatar = src;
+      paintAvatar(src);
+      avaTxt.textContent = (p.nickname || '学').charAt(0);
+    });
+  });
+
+  /* ---------- 分段单选 ---------- */
+  function bindSeg(rootId, key) {
+    var root = document.getElementById(rootId);
+    if (!root) return;
+    Array.prototype.forEach.call(root.querySelectorAll('button'), function (b) {
+      if (b.getAttribute('data-v') === p[key]) b.classList.add('on');
+      b.addEventListener('click', function () {
+        Array.prototype.forEach.call(root.querySelectorAll('button'), function (x) {
+          x.classList.remove('on');
+        });
+        b.classList.add('on');
+        p[key] = b.getAttribute('data-v');
+      });
+    });
+  }
+  bindSeg('edGender', 'gender');
+  bindSeg('edGrade', 'grade');
+  bindSeg('edTerm', 'term');
+  bindSeg('edCount', 'dailyCount');
+  bindSeg('edRest', 'restDay');
+
+  /* ---------- 胶囊：单选（教材版本） ---------- */
+  function bindChipSingle(rootId, key) {
+    var root = document.getElementById(rootId);
+    if (!root) return;
+    Array.prototype.forEach.call(root.querySelectorAll('button'), function (b) {
+      var v = b.getAttribute('data-v');
+      if (v === p[key]) b.classList.add('on');
+      b.addEventListener('click', function () {
+        Array.prototype.forEach.call(root.querySelectorAll('button'), function (x) {
+          x.classList.remove('on');
+        });
+        b.classList.add('on');
+        p[key] = v;
+      });
+    });
+  }
+  bindChipSingle('edBook', 'textbook');
+
+  /* ---------- 科目表：每科一行（重点 / 练习 / 进度 / 目标分） ---------- */
+  var sbList  = document.getElementById('sbList');
+  var sbTotal = document.getElementById('sbTotal');          /* 数字本身 */
+  var sbBox   = sbTotal.parentNode;                          /* 「目标总分」整行容器 */
+  var sbNote  = document.getElementById('sbNote');
+
+  var STAR = '<svg viewBox="0 0 24 24" aria-hidden="true">' +
+             '<path d="M12 3.5l2.65 5.37 5.93.86-4.29 4.18 1.01 5.9L12 17.02l-5.3 2.79' +
+             ' 1.01-5.9-4.29-4.18 5.93-.86z"/></svg>';
+
+  function attr(s) { return String(s == null ? '' : s).replace(/"/g, '&quot;'); }
+
+  /* ---------- 目标分校验 ----------
+     留空 = 这科不设目标（允许）；一旦填了，就必须是 0 < v ≤ 150（单科满分 150） */
+  var MAX_SCORE = 150;
+  function scoreBad(v) {
+    if (String(v == null ? '' : v).trim() === '') return '';
+    var n = parseFloat(v);
+    if (!(n > 0))      return 'zero';
+    if (n > MAX_SCORE) return 'over';
+    return '';
+  }
+  function markRowBad(name) {
+    var i = -1;
+    p.subjects.forEach(function (s, k) { if (s.name === name) i = k; });
+    if (i < 0) return;
+    var inp = sbList.querySelector('.sb-row[data-i="' + i + '"] .sb-score');
+    if (inp) inp.classList.add('is-bad');
+  }
+
+  function renderSubjects() {
+    sbList.innerHTML = p.subjects.map(function (s, i) {
+      var dis = s.on ? '' : ' disabled';
+      return '<div class="sb-row' + (s.on ? '' : ' is-off') + '" data-i="' + i + '">' +
+        '<span class="sb-name">' + s.name + '</span>' +
+        '<button class="sb-star' + (s.focus ? ' on' : '') + '" type="button" data-act="focus"' +
+          ' aria-pressed="' + (s.focus ? 'true' : 'false') + '"' +
+          ' title="' + (s.focus ? '取消重点' : '设为重点科目') + '">' + STAR + '</button>' +
+        '<button class="sb-on' + (s.on ? ' on' : '') + '" type="button" data-act="on"' +
+          ' aria-pressed="' + (s.on ? 'true' : 'false') + '">练</button>' +
+        '<input class="pf-input sb-in sb-prog" type="text" maxlength="12" autocomplete="off"' +
+          ' placeholder="如 第 3 单元" value="' + attr(s.progress) + '"' + dis + '>' +
+        '<input class="pf-input sb-in sb-score" type="number" min="0" max="150" step="1"' +
+          ' inputmode="numeric" placeholder="目标分" value="' + attr(s.target) + '"' + dis + '>' +
+        '</div>';
+    }).join('');
+    paintTotal();
+  }
+
+  function paintTotal() {
+    var on = onSubjects(p);
+    sbTotal.textContent = targetSum(p);
+    var filled = on.filter(function (s) { return parseFloat(s.target) > 0; }).length;
+    var over = on.filter(function (s) { return scoreBad(s.target) === 'over'; }).length;
+    var zero = on.filter(function (s) { return scoreBad(s.target) === 'zero'; }).length;
+    sbTotal.classList.toggle('is-bad', !!(over || zero));
+    sbBox.classList.toggle('is-bad', !!(over || zero));
+    if (!on.length) {
+      sbNote.textContent = '还没有开启任何科目';
+    } else if (over) {
+      sbNote.textContent = '有 ' + over + ' 科的分数超过单科满分 150，超出会被清空，请改一下';
+    } else if (zero) {
+      sbNote.textContent = '目标分要填大于 0 的数字，或者留空不填';
+    } else if (filled < on.length) {
+      sbNote.textContent = '已开 ' + on.length + ' 科 · ' + (on.length - filled) + ' 科还没填分数';
+    } else {
+      sbNote.textContent = '已开 ' + on.length + ' 科 · 全部已填';
+    }
+  }
+
+  renderSubjects();
+
+  /* 只改这一行，不整表重渲染 —— 否则输入焦点会被打断、正在填的内容会闪 */
+  function paintStar(row, s) {
+    var b = row.querySelector('.sb-star');
+    b.classList.toggle('on', s.focus);
+    b.setAttribute('aria-pressed', s.focus ? 'true' : 'false');
+    b.title = s.focus ? '取消重点' : '设为重点科目';
+  }
+  function paintOn(row, s) {
+    var b = row.querySelector('.sb-on');
+    b.classList.toggle('on', s.on);
+    b.setAttribute('aria-pressed', s.on ? 'true' : 'false');
+    row.classList.toggle('is-off', !s.on);
+    row.querySelector('.sb-prog').disabled  = !s.on;
+    row.querySelector('.sb-score').disabled = !s.on;
+  }
+
+  /* 科目表即改即存（防抖 400ms）：改完目标分直接返回也能生效，不依赖「保存资料」。
+     只把 subjects 合并进已存数据，不用页面上未保存的文本字段去覆盖盘上的值。 */
+  var autoTimer = null;
+  function autoSave() {
+    if (autoTimer) clearTimeout(autoTimer);
+    autoTimer = setTimeout(function () {
+      var q = readProfile();
+      q.subjects = p.subjects;
+      writeProfile(q);
+    }, 400);
+  }
+
+  sbList.addEventListener('click', function (e) {
+    var btn = e.target && e.target.closest ? e.target.closest('button[data-act]') : null;
+    if (!btn) return;
+    var row = btn.closest('.sb-row');
+    var s = p.subjects[+row.getAttribute('data-i')];
+    if (btn.getAttribute('data-act') === 'focus') { s.focus = !s.focus; paintStar(row, s); }
+    else                                          { s.on    = !s.on;    paintOn(row, s); }
+    hideErr();
+    paintTotal();
+    autoSave();
+  });
+
+  sbList.addEventListener('input', function (e) {
+    var inp = e.target;
+    if (!inp.classList || !inp.classList.contains('sb-in')) return;
+    var s = p.subjects[+inp.closest('.sb-row').getAttribute('data-i')];
+    if (inp.classList.contains('sb-prog')) {
+      s.progress = inp.value;
+      autoSave();
+    } else {
+      var bad = scoreBad(inp.value);
+      /* 上限是「单科 150 分」：一旦超出就直接清空该格并提示（不留超限值） */
+      if (bad === 'over') {
+        inp.value = '';
+        s.target = '';
+        inp.classList.remove('is-bad');
+        inp.classList.add('is-flash');
+        (function (el) {
+          setTimeout(function () { el.classList.remove('is-flash'); }, 900);
+        })(inp);
+        toast('「' + s.name + '」目标分最多 150 分，已清空');
+        paintTotal();
+        autoSave();
+        hideErr();
+        return;
+      }
+      s.target = inp.value;
+      inp.classList.toggle('is-bad', !!bad);    /* 0 / 负数等非法值只标红，留到保存时拦 */
+      paintTotal();
+      autoSave();
+    }
+    hideErr();
+  });
+
+  /* ---------- 文本框回填 ---------- */
+  document.getElementById('edNick').value  = p.nickname;
+  document.getElementById('edReal').value  = p.realName;
+  document.getElementById('edSign').value  = p.signature;
+  document.getElementById('edExam').value  = p.examDate;
+  document.getElementById('edStart').value = p.startTime;
+
+  /* ---------- 保存 ---------- */
+  var errEl = document.getElementById('edErr');
+  var saveBtn = document.getElementById('edSave');
+
+  function showErr(msg) {
+    errEl.textContent = msg;
+    errEl.hidden = false;
+    errEl.scrollIntoView({ block: 'center', behavior: 'smooth' });
+  }
+  function hideErr() { errEl.hidden = true; }
+
+  saveBtn.addEventListener('click', function () {
+    p.nickname  = document.getElementById('edNick').value.trim();
+    p.realName  = document.getElementById('edReal').value.trim();
+    p.signature = document.getElementById('edSign').value.trim();
+    p.examDate  = document.getElementById('edExam').value;
+    p.startTime = document.getElementById('edStart').value || '20:00';
+
+    if (!p.nickname) { showErr('昵称不能为空，家长在管理端靠它认出你。'); return; }
+    if (!onSubjects(p).length) {
+      showErr('至少要把一个科目的「练习」打开，否则每天没有任务可发。');
+      return;
+    }
+    var over = onSubjects(p).filter(function (s) { return scoreBad(s.target) === 'over'; })[0];
+    if (over) {
+      markRowBad(over.name);
+      showErr('「' + over.name + '」的目标分填了 ' + over.target + ' 分，单科满分是 150 分，最多只能填 150。');
+      return;
+    }
+    var bad = onSubjects(p).filter(function (s) { return scoreBad(s.target) === 'zero'; })[0];
+    if (bad) {
+      markRowBad(bad.name);
+      showErr('「' + bad.name + '」的目标分要填一个大于 0 的数字，或者留空不填。');
+      return;
+    }
+
+    hideErr();
+    writeProfile(p);
+
+    saveBtn.textContent = '已保存';
+    saveBtn.disabled = true;
+    setTimeout(function () { window.location.href = 'me.html'; }, 620);
+  });
+
+  hideErr();
+}());
+</script>
+</body>
+</html>

@@ -1,0 +1,717 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="light">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#F5F6F8">
+<title>错题复习 · 学迹</title>
+<script>document.documentElement.classList.add('js-on');</script>
+<link rel="stylesheet" href="style.css?v=20261021a">
+</head>
+<body data-page="mistake-review">
+
+<div class="app">
+<main class="main">
+
+  <header class="topbar" id="topbar"></header>
+
+  <!-- 复习进度条：一道一题，做完一颗点亮 -->
+  <div class="rv-bar" id="rv-bar">
+    <a class="qb-back" href="mistakes.html" aria-label="返回错题本">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"
+           stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <path d="M14.6 5.6 8.2 12l6.4 6.4"/>
+      </svg>
+    </a>
+    <div class="rv-dots" id="rv-dots"><!-- JS：进度点 --></div>
+    <span class="rv-pos" id="rv-pos">—</span>
+  </div>
+
+  <div class="content" id="rv-content">
+
+    <!-- 当前这一道错题 -->
+    <article class="rv-card" id="rv-card"><!-- JS --></article>
+
+    <!-- 判定结果（提交后出现） -->
+    <section class="rv-res" id="rv-res" hidden></section>
+
+    <!-- 本轮小结 -->
+    <section class="rv-done" id="rv-done" hidden></section>
+
+  </div>
+
+  <!-- 吸底操作条 -->
+  <div class="rv-foot" id="rv-foot">
+    <button class="btn-ghost" type="button" id="rv-skip">这道跳过</button>
+    <button class="btn-brand" type="button" id="rv-submit">提交答案</button>
+    <button class="btn-brand" type="button" id="rv-next" hidden>下一题</button>
+  </div>
+
+</main>
+</div>
+
+<script src="fx.js?v=20261021a"></script>
+<script src="app.js?v=20261021a"></script>
+<script src="qbank.js?v=20261021a"></script>
+<script>
+/* ============================================================
+   错题复习（独立会话页，不复用每日题目）
+   ------------------------------------------------------------
+   与 practice / answer 的区别：
+     · 题源只有错题本，一道一题，做完立刻判，判完立刻排下一次
+     · 没有「题组」概念，也没有浏览列表 —— 进来就是做题
+     · 答对 = 订正（按艾宾浩斯把下次复习往后推）；答错 = 次数 +1、退回待订正
+   排程算法在 qbank.js（QB.mistakeDue / QB.mistakeQueue），两个页面共用。
+   ============================================================ */
+
+var SUBJ_C = {
+  '语文': 'var(--c-cn)', '数学': 'var(--c-math)', '英语': 'var(--c-en)',
+  '物理': 'var(--c-phy)', '化学': 'var(--c-che)', '生物': 'var(--c-bio)',
+  '历史': 'var(--c-his)', '道法': 'var(--c-pol)', '地理': 'var(--c-geo)'
+};
+var LETTER = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H'];
+var DAY_MS = 24 * 3600 * 1000;
+
+/* ---------- 小工具 ---------- */
+function qs(name) {
+  var m = new RegExp('[?&]' + name + '=([^&]*)').exec(location.search);
+  return m ? decodeURIComponent(m[1]) : '';
+}
+function has(flag) { return new RegExp('(^|[?&])' + flag + '(=|[&]|$)').test(location.search); }
+function esc(s) {
+  return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+function attr(s) { return String(s == null ? '' : s).replace(/"/g, '&quot;'); }
+function plain(html) {
+  return String(html || '').replace(/<[^>]*>/g, '').replace(/\{\{\d+\}\}/g, '＿＿').replace(/\s+/g, ' ').trim();
+}
+function cut(s, n) { s = String(s || ''); return s.length > n ? s.slice(0, n) + '…' : s; }
+function subjChip(name) {
+  return '<span class="chip q-subj"><i class="dot" style="background:' +
+         (SUBJ_C[name] || 'var(--brand)') + '"></i>' + name + '</span>';
+}
+function typeChip(t) {
+  var cls = t === 'fill_blank' ? 'fill' : (t === 'short_answer' ? 'short' : t);
+  return '<span class="qtype qtype-' + cls + '">' + (QB.typeInfo[t] || {}).label + '</span>';
+}
+function fmtDate(ts) {
+  var d = new Date(ts);
+  return (d.getMonth() + 1) + ' 月 ' + d.getDate() + ' 日';
+}
+function ago(ts) {
+  if (!ts) return '—';
+  var d = Date.now() - ts, m = Math.floor(d / 60000);
+  if (m < 1) return '刚刚';
+  if (m < 60) return m + ' 分钟前';
+  var h = Math.floor(m / 60);
+  if (h < 24) return h + ' 小时前';
+  var dd = Math.floor(h / 24);
+  if (dd < 30) return dd + ' 天前';
+  return fmtDate(ts);
+}
+function parseIds(v) {
+  return String(v || '').split(',').map(function (s) { return s.trim(); }).filter(Boolean);
+}
+
+/* ---------- 答案 / 正确答案 翻成人话 ---------- */
+function ansText(item, ans) {
+  if (ans == null) return '';
+  if (item.type === 'choice') {
+    var arr = [].concat(ans);
+    return arr.map(function (id) {
+      var i = (item.options || []).map(function (o) { return o.id; }).indexOf(id);
+      return i >= 0 ? LETTER[i] : '?';
+    }).join('、');
+  }
+  if (item.type === 'fill_blank') {
+    return (item.blanks || []).map(function (b) {
+      var v = ans[b.n];
+      return b.label + ' ' + (v == null || v === '' ? '（空）' : v);
+    }).join('　');
+  }
+  return String(ans).trim();
+}
+function rightText(item) {
+  if (item.type === 'choice') {
+    return (item.answer || []).map(function (id) {
+      var i = (item.options || []).map(function (o) { return o.id; }).indexOf(id);
+      return i >= 0 ? '<b>' + LETTER[i] + '</b> ' + item.options[i].text : '';
+    }).join('　');
+  }
+  if (item.type === 'fill_blank') {
+    return (item.blanks || []).map(function (b) {
+      return b.label + ' <b>' + esc(b.accept && b.accept[0] || '—') + '</b>';
+    }).join('　');
+  }
+  if (item.answer_text) return item.answer_text;
+  return (item.rubric || []).map(function (r) { return esc(r.point); }).join('；') || '按采分点判分';
+}
+
+/* ============================================================
+   会话状态
+   ============================================================ */
+var Q = null;              /* 队列 */
+var idx = 0;               /* 当前第几道 */
+var cur = null;            /* { e, block, item, due } */
+var ans = null;            /* 当前作答：choice=[] / fill={} / short='' */
+var res = null;            /* 判定结果 */
+var graded = false;
+var MARK = {};             /* itemId → 'ok' | 'bad' | 'skip' */
+
+var elCard = document.getElementById('rv-card');
+var elRes  = document.getElementById('rv-res');
+var elDone = document.getElementById('rv-done');
+var btnSub = document.getElementById('rv-submit');
+var btnNxt = document.getElementById('rv-next');
+var btnSkip = document.getElementById('rv-skip');
+var elFoot = document.getElementById('rv-foot');
+
+/* ============================================================
+   启动
+   ============================================================ */
+function boot() {
+  if (has('demo')) QB.mistakeSeedDemo();
+
+  var ids   = parseIds(qs('ids'));
+  var scope = qs('scope') || 'today';
+  var limit = Math.max(1, Math.min(12, parseInt(qs('limit'), 10) || 6));
+
+  Q = QB.mistakeQueue({ ids: ids, scope: scope, limit: ids.length || limit });
+
+  if (!Q.list.length) { showEmpty(); return; }
+
+  idx = 0;
+  renderDots();
+  renderCard();
+}
+
+/* ============================================================
+   进度点
+   ============================================================ */
+function renderDots() {
+  document.getElementById('rv-dots').innerHTML = Q.list.map(function (r, i) {
+    var st = MARK[r.item.id] || '';
+    var cls = 'rv-dot' + (i === idx ? ' cur' : '') + (st ? ' ' + st : '');
+    return '<span class="' + cls + '" title="第 ' + (i + 1) + ' 道">' + (st === 'ok' ? '✓' : (st === 'bad' ? '✕' : (i + 1))) + '</span>';
+  }).join('');
+}
+
+/* ============================================================
+   渲染当前这一道
+   ============================================================ */
+function cardHTML(r) {
+  var it = r.item, b = r.block, e = r.e;
+  var due = r.due || QB.mistakeDue(e);
+  var isClosed = (e.wrong || 0) >= 3;
+
+  /* 卡头 */
+  var head =
+    '<div class="rv-head">' +
+      '<span class="rv-stage">第 ' + due.stage + ' 次复习</span>' +
+      subjChip(b.subject) +
+      typeChip(it.type) +
+      '<span class="rv-wrong' + (isClosed ? ' hot' : '') + '">错过 ' + (e.wrong || 1) + ' 次</span>' +
+    '</div>' +
+    '<p class="rv-kp">' + esc(b.kp) + ' · ' + it.score + ' 分' +
+      (b.material ? ' · 材料第 ' + it.ord + ' 小问' : '') + '</p>';
+
+  /* 材料（材料题才有） */
+  var mat = b.material ? materialHTML(b, it.blank || 0) : '';
+
+  /* 题干 + 作答区 */
+  var body = '';
+  if (it.type === 'choice') {
+    body = '<div class="q-stem">' + (it.stem || (it.blank ? '第 ' + it.blank + ' 空' : '')) + '</div>' +
+           figuresHTML(it.figures) + optionsHTML(it);
+  } else if (it.type === 'fill_blank') {
+    body = '<div class="q-stem">' + stemHTML(it) + '</div>' + figuresHTML(it.figures);
+  } else {
+    body = '<div class="q-stem">' + (it.stem || '') + '</div>' + figuresHTML(it.figures) +
+      '<textarea class="q-ta" rows="6" id="rv-ta" placeholder="按要点一条一条写，判分是按采分点给的…">' +
+        esc(ans || '') + '</textarea>' +
+      '<div class="q-ta-foot"><span class="q-words" id="rv-words">已写 ' + plain(ans).length + ' 字</span>' +
+        '<span class="q-words-tip">写完检查一遍要点有没有漏</span></div>';
+  }
+
+  /* 上次答的什么（复习时最有用的线索） */
+  var last = lastStrip(r);
+
+  return head + mat + '<div class="rv-ask">' + body + '</div>' + last;
+}
+
+function materialHTML(b, targetBlank) {
+  var inline = QB.isInline(b);
+  var body = b.material.paragraphs.map(function (p) {
+    var h = String(p);
+    if (inline) {
+      h = h.replace(/\{\{(\d+)\}\}/g, function (m, n) {
+        if (+n === targetBlank) return '<span class="rv-blank-on">' + n + '</span>';
+        return '<span class="rv-blank-off">＿＿</span>';
+      });
+    }
+    return '<p>' + h + '</p>';
+  }).join('');
+  return '<div class="rv-mat">' +
+      '<p class="rv-mat-t">' + esc(b.material.title) + '</p>' +
+      body +
+      (b.material.source ? '<p class="rv-mat-s">— ' + esc(b.material.source) + '</p>' : '') +
+    '</div>';
+}
+
+function figuresHTML(list) {
+  if (!list || !list.length) return '';
+  return '<div class="q-figures">' + list.map(function (f) {
+    return '<figure class="q-figure">' + f.svg +
+           (f.caption ? '<figcaption>' + f.caption + '</figcaption>' : '') + '</figure>';
+  }).join('') + '</div>';
+}
+
+function stemHTML(item) {
+  var blanks = item.blanks || [];
+  return String(item.stem || '').replace(/\{\{(\d+)\}\}/g, function (m, n) {
+    var b = null;
+    blanks.forEach(function (x) { if (x.n === +n) b = x; });
+    var w = Math.max(4, Math.min(14, ((b && b.accept && b.accept[0] || '').length) + 2));
+    var v = (ans && ans[n] != null) ? ans[n] : '';
+    return '<span class="qb-wrap"><b class="qb-no">' + n + '</b>' +
+      '<input class="q-blank" type="text" data-n="' + n + '" autocomplete="off" spellcheck="false" ' +
+        'style="width:' + w + 'em" value="' + attr(v) + '" ' + (graded ? 'readonly' : '') +
+        ' aria-label="第 ' + n + ' 空"></span>';
+  });
+}
+
+function optionsHTML(item) {
+  var picked = ans || [];
+  var right = item.answer || [];
+  return '<div class="q-opts">' +
+    (item.options || []).map(function (o, i) {
+      var on = picked.indexOf(o.id) >= 0;
+      var isR = right.indexOf(o.id) >= 0;
+      var cls = 'q-opt';
+      if (on) cls += ' on';
+      if (graded) {
+        if (isR) cls += ' right';
+        else if (on) cls += ' pick-wrong';
+      }
+      return '<button class="' + cls + '" type="button" data-oid="' + o.id + '" ' +
+        (graded ? 'disabled' : '') + '>' +
+          '<span class="q-opt-k">' + LETTER[i] + '</span>' +
+          '<span class="q-opt-t">' + o.text + '</span>' +
+          (graded && isR ? '<span class="q-opt-flag">正确</span>' : '') +
+        '</button>';
+    }).join('') + '</div>';
+}
+
+function lastStrip(r) {
+  if (graded) return '';                     /* 判定后答案对比在结果面板里，题面不再重复 */
+  var a = QB.attemptOf(r.item.id);
+  if (!a) {
+    return '<p class="rv-last"><span class="rv-last-k">第一次复习</span>' +
+           '<span class="rv-last-v">当时是答错进来的，这次把它做对就算订正。</span></p>';
+  }
+  var t = ansText(r.item, a.ans);
+  if (!t) return '';
+  return '<p class="rv-last"><span class="rv-last-k">' + (a.ok ? '上次答对了' : '上次你答的') + '</span>' +
+         '<span class="rv-last-v' + (a.ok ? ' ok' : ' bad') + '">' + esc(cut(t, 60)) + '</span>' +
+         '<span class="rv-last-t">' + ago(a.at) + '</span></p>';
+}
+
+function renderCard() {
+  cur = Q.list[idx];
+  graded = false;
+  res = null;
+  ans = cur.item.type === 'choice' ? [] : (cur.item.type === 'fill_blank' ? {} : '');
+
+  elDone.hidden = true;
+  elRes.hidden = true;
+  elRes.innerHTML = '';
+  elCard.hidden = false;
+  elCard.innerHTML = cardHTML(cur);
+  elCard.classList.remove('shake');
+
+  document.getElementById('rv-pos').textContent = (idx + 1) + ' / ' + Q.list.length;
+
+  btnSkip.hidden = false;
+  btnSub.hidden = false;
+  btnSub.textContent = '提交答案';
+  btnNxt.hidden = true;
+  btnNxt.textContent = (idx >= Q.list.length - 1) ? '完成本轮' : '下一题';
+
+  bindCard();
+  renderDots();
+  window.scrollTo({ top: 0, behavior: 'auto' });
+}
+
+/* ============================================================
+   作答交互
+   ============================================================ */
+function bindCard() {
+  if (cur.item.type === 'choice') {
+    elCard.querySelectorAll('.q-opt').forEach(function (btn) {
+      btn.addEventListener('click', function () {
+        if (graded) return;
+        var id = btn.dataset.oid;
+        var i = ans.indexOf(id);
+        if (i >= 0) ans.splice(i, 1);
+        else {
+          if (cur.item.multi) ans.push(id);
+          else ans = [id];
+        }
+        elCard.querySelectorAll('.q-opt').forEach(function (b) {
+          b.classList.toggle('on', ans.indexOf(b.dataset.oid) >= 0);
+        });
+      });
+    });
+  }
+
+  elCard.querySelectorAll('.q-blank').forEach(function (inp) {
+    inp.addEventListener('input', function () { ans[inp.dataset.n] = inp.value; });
+  });
+
+  var ta = document.getElementById('rv-ta');
+  if (ta) {
+    ta.addEventListener('input', function () {
+      ans = ta.value;
+      var w = document.getElementById('rv-words');
+      if (w) w.textContent = '已写 ' + plain(ta.value).length + ' 字';
+    });
+  }
+}
+
+function answered() {
+  var it = cur.item;
+  if (it.type === 'choice') return !!(ans && ans.length);
+  if (it.type === 'fill_blank') {
+    return !!(ans && Object.keys(ans).some(function (k) { return String(ans[k] || '').trim(); }));
+  }
+  return !!String(ans || '').trim();
+}
+
+/* ============================================================
+   提交 → 判 → 排下一次
+   ============================================================ */
+function doSubmit() {
+  if (!answered()) {
+    elCard.classList.remove('shake');
+    void elCard.offsetWidth;
+    elCard.classList.add('shake');
+    if (typeof toast === 'function') toast('先作答再提交');
+    return;
+  }
+
+  var it = cur.item;
+  var g = QB.grade(it, ans);
+  g.unanswered = false;
+  graded = true;
+  res = g;
+
+  /* 落盘（正式版 POST /mistakes/{id}/review） */
+  QB.save(it.id, {
+    ans: ans, ok: g.ok, score: g.score, max: g.max,
+    hits: (g.hits || []).map(function (h) { return h.point; }),
+    at: Date.now(), from: 'review'
+  });
+
+  /* 答对 = 订正（已订正的题再做对一次也把排程往后推）；答错 = 次数 +1 退回待订正 */
+  if (g.ok) QB.mistakeRight(it.id, true);
+  else QB.mistakeWrong(it.id);
+
+  MARK[it.id] = g.ok ? 'ok' : 'bad';
+
+  /* 重画题面（选项着色）+ 结果面板 */
+  elCard.innerHTML = cardHTML(cur);
+  elRes.hidden = false;
+  elRes.innerHTML = resultHTML();
+  bindResult();
+
+  btnSub.hidden = true;
+  btnSkip.hidden = true;
+  btnNxt.hidden = false;
+  btnNxt.textContent = (idx >= Q.list.length - 1) ? '完成本轮' : '下一题';
+
+  renderDots();
+  elRes.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  if (g.ok && window.FX && FX.burstFrom) FX.burstFrom(elRes.querySelector('.rv-verdict'), 14);
+}
+
+function resultHTML() {
+  var it = cur.item;
+  var g = res;
+  var e = QB.mistakeOf(it.id) || cur.e;
+  var due = QB.mistakeDue(e);
+
+  var verdict = g.ok
+    ? '<div class="rv-verdict ok"><span class="rv-v-ico">✓</span>' +
+      '<span class="rv-v-txt"><b>订正成功</b><i>做对一次就算订正，这道从待订正里出去了</i></span></div>'
+    : '<div class="rv-verdict bad"><span class="rv-v-ico">✕</span>' +
+      '<span class="rv-v-txt"><b>还差一点</b><i>错题没销号，错误次数 +1，明天再来一次</i></span></div>';
+
+  var scoreLine = '<div class="rv-score">' +
+    '<span class="rv-score-n">' + g.score + '<i>/' + g.max + '</i></span>' +
+    '<span class="rv-score-t">本题得分</span>' +
+    (g.ok ? '<span class="chip ok">全对</span>' : '<span class="chip warn">未通过</span>') +
+  '</div>';
+
+  /* 我的答案 / 正确答案 */
+  var mine = ansText(it, ans);
+  var cmp = '<div class="rv-cmp">' +
+    '<div class="rv-cmp-row"><span class="rv-cmp-k">你的答案</span>' +
+      '<span class="rv-cmp-v' + (g.ok ? ' good' : ' bad') + '">' + (esc(mine) || '未作答') + '</span></div>' +
+    '<div class="rv-cmp-row"><span class="rv-cmp-k">正确答案</span>' +
+      '<span class="rv-cmp-v good">' + rightText(it) + '</span></div>' +
+  '</div>';
+
+  /* 填空题逐空 / 简答采分点 */
+  var detail = '';
+  if (g.marks && g.marks.length) {
+    detail = '<div class="rv-marks">' + g.marks.map(function (m) {
+      return '<div class="rv-mark' + (m.ok ? ' ok' : ' bad') + '">' +
+        '<span class="rv-mark-k">' + m.label + '</span>' +
+        '<span class="rv-mark-v">' + (esc(m.val) || '（空）') + '</span>' +
+        '<span class="rv-mark-need">' + (m.ok ? '✓' : '应填 ' + esc(m.need)) + '</span>' +
+      '</div>';
+    }).join('') + '</div>';
+  }
+  if (g.hits || g.miss) {
+    var hitN = (g.hits || []).length, allN = hitN + (g.miss || []).length;
+    detail = '<div class="rv-rubric">' +
+      '<p class="rv-rubric-h">采分点命中 ' + hitN + ' / ' + allN + '</p>' +
+      (g.hits || []).map(function (r) {
+        return '<p class="rv-rub ok"><b>✓</b>' + esc(r.point) + '<i>' + r.score + ' 分</i></p>';
+      }).join('') +
+      (g.miss || []).map(function (r) {
+        return '<p class="rv-rub bad"><b>✕</b>' + esc(r.point) + '<i>缺这 ' + r.score + ' 分</i></p>';
+      }).join('') +
+    '</div>' + detail;
+  }
+
+  /* 讲解 */
+  var why = '';
+  var exp = it.explanation || '';
+  if (exp) {
+    why = '<div class="rv-why"><p class="rv-why-h">讲解</p><div class="rv-why-b">' + exp + '</div></div>';
+  } else if (it.answer_text) {
+    why = '<div class="rv-why"><p class="rv-why-h">参考答案</p>' +
+          '<div class="rv-why-b">' + it.answer_text + '</div></div>';
+  }
+
+  /* 下一次什么时候复习 */
+  var sched = g.ok
+    ? '<div class="rv-sched ok">' +
+        '<span class="rv-sched-k">下次复习</span>' +
+        '<span class="rv-sched-v">' + due.gap + ' 天后 · ' + fmtDate(due.at) + '</span>' +
+        '<span class="rv-sched-t">' + (e.fixed ? '已订正，间隔拉到最长做终检' : '') + '</span>' +
+      '</div>'
+    : '<div class="rv-sched bad">' +
+        '<span class="rv-sched-k">下次复习</span>' +
+        '<span class="rv-sched-v">' + due.gap + ' 天后 · ' + fmtDate(due.at) + '</span>' +
+        '<span class="rv-sched-t">还是没对，间隔回到最短档</span>' +
+      '</div>';
+
+  return verdict + scoreLine + cmp + detail + why + sched;
+}
+
+function bindResult() { /* 结果区目前无交互，保留钩子 */ }
+
+/* ============================================================
+   跳过 / 下一题 / 小结
+   ============================================================ */
+function doSkip() {
+  MARK[cur.item.id] = 'skip';
+  renderDots();
+  advance();
+}
+
+function advance() {
+  if (idx >= Q.list.length - 1) { showDone(); return; }
+  idx++;
+  renderCard();
+}
+
+function showDone() {
+  var okN = 0, badN = 0, skipN = 0;
+  Q.list.forEach(function (r) {
+    var m = MARK[r.item.id];
+    if (m === 'ok') okN++;
+    else if (m === 'bad') badN++;
+    else skipN++;
+  });
+
+  var s = QB.mistakeStats();
+  var n = Q.list.length;
+
+  elCard.hidden = true;
+  elRes.hidden = true;
+  elDone.hidden = false;
+  elFoot.hidden = true;
+
+  var praise = okN === n ? '这一轮全对，错题本又轻了一点。'
+    : okN >= n / 2 ? '过了一半，剩下那几道明天再见。'
+    : '没关系 —— 错题本来就是要反复才记住的。';
+
+  elDone.innerHTML =
+    '<div class="rv-done-top">' +
+      '<div class="rv-done-ring" data-ring="' + Math.round(okN / n * 100) + '">' +
+        '<svg viewBox="0 0 120 120" aria-hidden="true">' +
+          '<circle class="track" cx="60" cy="60" r="50"></circle>' +
+          '<circle class="val" cx="60" cy="60" r="50"></circle>' +
+        '</svg>' +
+        '<div class="hero-ring-txt"><b>' + okN + '</b><span>/ ' + n + ' 道</span></div>' +
+      '</div>' +
+      '<div class="rv-done-txt">' +
+        '<p class="rv-done-k">本轮复习结束</p>' +
+        '<h2 class="rv-done-h">订正 ' + okN + ' 道</h2>' +
+        '<p class="rv-done-p">' + praise + '</p>' +
+        '<div class="chips">' +
+          (okN ? '<span class="chip ok">订正 ' + okN + ' 道</span>' : '') +
+          (badN ? '<span class="chip warn">仍待订正 ' + badN + ' 道</span>' : '') +
+          (skipN ? '<span class="chip">跳过 ' + skipN + ' 道</span>' : '') +
+          '<span class="chip">错题本待订正 ' + s.pending + ' 道</span>' +
+        '</div>' +
+      '</div>' +
+    '</div>' +
+    '<div class="rv-done-act">' +
+      '<a class="btn-brand" href="mistakes.html">回错题本</a>' +
+      (s.pending ? '<a class="btn-ghost" href="mistake-review.html?scope=all">再过一轮（' + s.pending + ' 道待订正）</a>' : '') +
+      '<a class="btn-ghost" href="daily.html">回每日任务</a>' +
+    '</div>' +
+    '<p class="rv-done-note">每道错题按 1 / 2 / 4 / 7 / 15 / 30 天的间隔排复习：' +
+      '答对一次就把间隔往后推一档，答错一次就退回最短档 —— 什么时候再见面由你的表现决定。</p>';
+
+  var ring = elDone.querySelector('.rv-done-ring');
+  var pct = Math.round(okN / n * 100);
+  if (window.FX && FX.ring) FX.ring(ring, pct);
+  else ring.setAttribute('data-ring', pct);
+
+  window.scrollTo({ top: 0, behavior: 'auto' });
+}
+
+function showEmpty() {
+  var st = QB.mistakeStats();
+  elCard.hidden = true;
+  elRes.hidden = true;
+  elDone.hidden = false;
+  elFoot.hidden = true;
+
+  elDone.innerHTML = st.total
+    ? '<div class="rv-empty">' +
+        '<div class="rv-empty-ico">✓</div>' +
+        '<h2>今天没有到期的错题</h2>' +
+        '<p>错题本里还有 <b>' + st.pending + '</b> 道待订正，但都还没到复习时间。' +
+          '想提前过一遍也行 —— 提前做对了同样算订正。</p>' +
+        '<div class="rv-empty-act">' +
+          (st.pending ? '<a class="btn-brand" href="mistake-review.html?scope=all">提前复习（' + st.pending + ' 道）</a>' : '') +
+          '<a class="btn-ghost" href="mistakes.html">回错题本</a>' +
+        '</div>' +
+      '</div>'
+    : '<div class="rv-empty">' +
+        '<div class="rv-empty-ico">＋</div>' +
+        '<h2>错题本还是空的</h2>' +
+        '<p>每日题目里答错的题会自动收进来，也可以在做题时手动点「加入错题本」。' +
+          '收进来之后，这里就按 1 / 2 / 4 / 7 / 15 / 30 天的节奏提醒你复习。</p>' +
+        '<div class="rv-empty-act">' +
+          '<a class="btn-brand" href="daily.html">去看今日任务</a>' +
+          '<a class="btn-ghost" href="mistakes.html">回错题本</a>' +
+        '</div>' +
+      '</div>';
+}
+
+/* ============================================================
+   事件
+   ============================================================ */
+btnSub.addEventListener('click', doSubmit);
+btnNxt.addEventListener('click', function () {
+  if (!graded) return;
+  advance();
+});
+btnSkip.addEventListener('click', doSkip);
+
+document.addEventListener('keydown', function (e) {
+  if (e.key === 'Enter' && !e.shiftKey) {
+    var tag = (e.target.tagName || '').toLowerCase();
+    if (e.target.isContentEditable) return;
+    if (tag === 'textarea') return;
+    if (e.target.classList && e.target.classList.contains('q-blank')) return;
+    if (!btnSub.hidden) { e.preventDefault(); doSubmit(); }
+    else if (!btnNxt.hidden) { e.preventDefault(); advance(); }
+  }
+});
+
+/* ?selftest：给无头验证一个可断言的状态出口 */
+function runSelftest() {
+  var t = [];
+  function chk(name, cond, extra) { t.push((cond ? 'PASS ' : 'FAIL ') + name + (extra ? '=' + extra : '')); }
+
+  chk('queue', !!Q && Q.list.length > 0, Q ? Q.list.length : 0);
+  chk('card-rendered', !!cur && !!elCard.innerHTML);
+  chk('dots', document.querySelectorAll('.rv-dot').length === (Q ? Q.list.length : 0));
+  chk('due-flag', !!(cur && cur.due));
+  chk('footer-submit', !btnSub.hidden);
+
+  /* 模拟作答第一道：选第一个选项 / 填第一空 / 写一段话
+     ?wrong → 故意答错（验证「次数 +1、退回待订正」） */
+  if (cur) {
+    if (cur.item.type === 'choice') {
+      var opts = elCard.querySelectorAll('.q-opt');
+      var pick = has('wrong') ? opts[opts.length - 1] : opts[0];
+      if (pick) pick.click();
+      chk('pick', ans.length > 0, ans.join(','));
+    } else if (cur.item.type === 'fill_blank') {
+      var inp = elCard.querySelector('.q-blank');
+      if (inp) { inp.value = has('wrong') ? 'zzz' : 'x'; inp.dispatchEvent(new Event('input')); }
+      chk('fill', !!ans[1]);
+    } else {
+      var ta = document.getElementById('rv-ta');
+      if (ta) { ta.value = has('wrong') ? '不会' : '测试作答'; ta.dispatchEvent(new Event('input')); }
+      chk('short', !!ans);
+    }
+    chk('answered', answered());
+    var before = cur.e.wrong || 0;
+    doSubmit();
+    chk('graded', graded);
+    chk('res-shown', !elRes.hidden);
+    chk('has-verdict', !!elRes.querySelector('.rv-verdict'));
+    chk('has-sched', !!elRes.querySelector('.rv-sched'));
+    chk('mark', !!MARK[cur.item.id], MARK[cur.item.id]);
+    chk('attempt-saved', !!QB.attemptOf(cur.item.id));
+    chk('next-shown', !btnNxt.hidden);
+    chk('wrong-delta', (QB.mistakeOf(cur.item.id).wrong || 0) === before + (res.ok ? 0 : 1),
+        (QB.mistakeOf(cur.item.id).wrong || 0) + '/' + before);
+    chk('fixed-flag', QB.mistakeOf(cur.item.id).fixed === !!res.ok);
+
+    /* ?walk：一路做完，验证小结页 */
+    if (has('walk')) {
+      var autoAnswer = function () {
+        if (cur.item.type === 'choice') {
+          var o = elCard.querySelector('.q-opt');
+          if (o) o.click();
+        } else if (cur.item.type === 'fill_blank') {
+          elCard.querySelectorAll('.q-blank').forEach(function (i) {
+            i.value = 'x'; i.dispatchEvent(new Event('input'));
+          });
+        } else {
+          var tx = document.getElementById('rv-ta');
+          if (tx) { tx.value = '测试作答'; tx.dispatchEvent(new Event('input')); }
+        }
+        doSubmit();
+      };
+      var guard = 0;
+      while (guard++ < 30 && elDone.hidden) {
+        if (!btnNxt.hidden) btnNxt.click();
+        if (!elDone.hidden) break;
+        autoAnswer();
+      }
+      chk('walk-rounds', guard < 30, guard);
+      chk('done-shown', !document.getElementById('rv-done').hidden);
+      chk('done-has-act', !!document.querySelector('#rv-done .rv-done-act'));
+      chk('foot-hidden', elFoot.hidden);
+    }
+  }
+  document.body.setAttribute('data-selftest', t.join(';'));
+}
+
+boot();
+if (has('selftest')) runSelftest();
+</script>
+</body>
+</html>

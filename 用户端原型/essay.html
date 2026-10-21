@@ -1,0 +1,306 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="light">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#F5F6F8">
+<title>作文 · 学迹</title>
+<script>document.documentElement.classList.add('js-on');</script>
+<link rel="stylesheet" href="style.css?v=20261021a">
+</head>
+<body data-page="essay">
+
+<div class="app">
+<main class="main">
+
+  <header class="topbar" id="topbar"></header>
+
+  <div class="content content-narrow">
+
+    <!-- 作文任务（管理端发布） -->
+    <section class="section reveal">
+      <h2 class="section-title">作文任务 <span class="count">· 管理端发布</span></h2>
+      <div class="essay-tasks" id="task-list"><!-- JS 渲染 --></div>
+    </section>
+
+    <!-- 优秀作文 -->
+    <section class="section reveal">
+      <h2 class="section-title">优秀作文 <span class="count">· 通过审核的佳作与范文</span></h2>
+      <div class="flt-row" id="work-filter">
+        <button class="flt on" type="button" data-cat="all">全部</button>
+        <button class="flt" type="button" data-cat="记叙文">记叙文</button>
+        <button class="flt" type="button" data-cat="说明文">说明文</button>
+        <button class="flt" type="button" data-cat="议论文">议论文</button>
+        <button class="flt" type="button" data-cat="英语">英语</button>
+      </div>
+      <div class="essay-grid" id="work-list"><!-- JS 渲染 --></div>
+    </section>
+
+  </div>
+</main>
+</div>
+
+<script src="fx.js?v=20261021a"></script>
+<script src="app.js?v=20261021a"></script>
+<script>
+/* ============================================================
+   作文：任务列表 + 优秀作文墙
+   流程：管理端发布 → 学生写作并上传 → 大模型打分 → 人工审核 → 展示结果
+   ============================================================ */
+
+/* ---------- 任务数据（正式版来自管理端发布的作文任务） ---------- */
+var TASKS = [
+  {
+    id: 't1',
+    title: 'My Weekend',
+    subject: '英语', genre: '记叙文',
+    meta: '80 词左右 · 建议 30 分钟 · 主要用一般过去时',
+    due: '周五 20:00 前提交',
+    step: 1,                 /* 当前进行到第几步：1 写作 / 2 AI评阅 / 3 人工审核 / 4 展示结果 */
+    state: 'todo'
+  },
+  {
+    id: 't2',
+    title: '那一次，我读懂了坚持',
+    subject: '语文', genre: '记叙文',
+    meta: '不少于 600 字 · 建议 45 分钟 · 写一件真实经历，要有细节',
+    due: '今天 09:12 提交 · 等待老师审核',
+    step: 3,
+    score: 85,
+    state: 'audit'
+  },
+  {
+    id: 't3',
+    title: '我的家乡',
+    subject: '语文', genre: '说明文',
+    meta: '500 字左右 · 建议 40 分钟 · 至少用两种说明方法',
+    due: '10 月 3 日 · 已通过审核',
+    step: 4,
+    score: 82,
+    state: 'done'
+  }
+];
+
+var STEP_NAMES = ['写作', 'AI 评阅', '人工审核', '展示结果'];
+
+/* 状态标签 */
+function stateChip(t) {
+  if (t.state === 'todo')  return '<span class="chip warn">待写作</span>';
+  if (t.state === 'audit') return '<span class="chip brand">AI 已评 ' + t.score + ' · 待审核</span>';
+  return '<span class="chip ok">已通过审核 ' + t.score + ' 分</span>';
+}
+/* 四步流程条 */
+function stepsBar(cur) {
+  return '<div class="steps-mini">' + STEP_NAMES.map(function (n, i) {
+    var no = i + 1;
+    var cls = no < cur ? 'done' : (no === cur ? 'cur' : '');
+    return '<span class="st ' + cls + '">' + (no < cur ? '✓ ' : '') + n + '</span>' +
+           (no < STEP_NAMES.length ? '<span class="sep">›</span>' : '');
+  }).join('') + '</div>';
+}
+/* 任务卡 */
+function taskHTML(t) {
+  var btn = t.state === 'todo'
+    ? '<a class="todo-action" href="essay-write.html?id=' + t.id + '">去写作</a>'
+    : '<a class="todo-action ghost" href="essay-write.html?id=' + t.id + '">查看' + (t.state === 'audit' ? '评语' : '结果') + '</a>';
+
+  return '<article class="task-card">' +
+    '<div class="task-top">' +
+      '<span class="task-title">' + t.title + '</span>' +
+      stateChip(t) +
+      '<span class="chip brand">管理端发布</span>' +
+    '</div>' +
+    '<p class="task-meta">' + t.subject + ' · ' + t.genre + ' · ' + t.meta + '</p>' +
+    '<p class="task-meta" style="margin-top:3px">' + t.due + '</p>' +
+    stepsBar(t.step) +
+    '<div class="task-foot">' + btn + '</div>' +
+  '</article>';
+}
+document.getElementById('task-list').innerHTML = TASKS.map(taskHTML).join('');
+
+/* ---------- 优秀作文（通过审核后由管理端推荐入库） ----------
+   excerpt 卡片上的「节选」；full 是全文分段（一段一个元素）
+   正文里用 **…** 包住的是亮点句，弹框里会高亮标出 */
+var WORKS = [
+  {
+    id: 'w1', title: '那束光', cat: '记叙文', by: '初三(3)班 · 安静', time: '本周',
+    score: 96,
+    excerpt: '那天晚自习后，走廊的灯坏了一盏，只剩尽头的应急灯亮着。我扶着栏杆往下走，听见身后有人喊我的名字——是宿管阿姨，她举着手电，光柱一直送到楼梯口。后来我才知道，她每晚都在那个位置等最后一个学生走完。',
+    note: '以「光」贯穿全篇，细节真实、情绪克制，结尾点睛不喊口号。',
+    full: [
+      '晚自习结束的铃声响过之后，教学楼会有一段奇特的安静——像有人把音量键一把拧到了底。那天我收拾书包磨蹭到最后一个，走廊的灯已经灭了一半，只剩尽头那盏应急灯，绿幽幽地亮着。',
+      '我扶着栏杆往下走，脚步声被楼道的空旷吞掉。走到三楼拐角时，身后忽然有人喊我的名字。那声音不大，甚至有点哑，但在那么静的地方，像有人在我背上轻轻拍了一下。',
+      '是宿管阿姨。她站在楼梯口，手里举着一只手电，光柱从高处斜斜地落下来，正好铺在我脚下那几级台阶上。她没往前走，只是把光一直往我这边送，像钓鱼的人耐心地垂着线。**「慢慢走，别摸黑。」**',
+      '我有点不好意思，加快了脚步。光一路跟着我，等我踩到一楼大厅的方砖上，她才把手电收回去，转身往宿舍楼走。我回头看了一眼，她的背有点驼，手里的手电还亮着，一晃一晃。',
+      '后来我才知道，她每晚都在那个位置等最后一个学生走完。不止是我，还有周四留值日的、周三被叫去补作业的、周二和我一样爱磨蹭的。她记得每个人的名字，也知道谁走得最晚。',
+      '我至今记得那束光的温度——它并不亮，甚至照不清她的脸。但走廊再黑的时候，我总觉得自己脚下有几级台阶是亮的。**原来有些光不是为了照亮一整条路，它只需要照亮你迈出去的下一个地方。**'
+    ]
+  },
+  {
+    id: 'w2', title: 'My Favourite Season', cat: '英语', lang: 'en', by: '初三(1)班 · 陈屿', time: '上周',
+    score: 94,
+    excerpt: 'Autumn is my favourite season, not because of the cool weather, but because of the smell. When the wind blows through the ginkgo trees on my way to school, I always slow down and take a deep breath — it smells like the beginning of something.',
+    note: '句式有变化，用感官细节代替套话；「the beginning of something」收得漂亮。',
+    full: [
+      'Autumn is my favourite season, not because of the cool weather, but because of the smell.',
+      'On my way to school there is a short street lined with ginkgo trees. In the middle of October they turn the colour of egg yolk, and the fallen leaves lie on the ground like small fans that somebody forgot to close.',
+      '**When the wind blows through them, I always slow down and take a deep breath — it smells like the beginning of something.**',
+      'Autumn is also the season of new notebooks. Every September I choose a fresh exercise book, write my name on the first line, and promise myself to keep it neat. By November the promise is usually broken, but making it still feels good.',
+      'Winter will come, and then spring. But for a few weeks each year, the air on that street smells like a promise — **and I like who I am in it.**'
+    ]
+  },
+  {
+    id: 'w3', title: '一座桥的自述', cat: '说明文', by: '初三(2)班 · 林一舟', time: '上周',
+    score: 92,
+    excerpt: '我是一座石拱桥，今年一百二十七岁。我的脊背被车轮磨出了浅槽，槽里积过雨水、落过桂花瓣，也承过挑担人的脚步。人们总在桥上匆匆走过，很少有人停下来看看那些被磨圆的棱角——那是我最诚实的地方。',
+    note: '用第一人称自述降低说明文的说教感，列数字与摹状貌结合得自然。',
+    full: [
+      '我是一座石拱桥，今年一百二十七岁。',
+      '我的结构很朴素：一个半圆的拱，两块厚实的桥台，桥面铺着三十六级青石台阶。拱券由一百二十七块条石砌成，每块重约两百斤，石缝里灌的是石灰浆掺糯米汁。这套配方在今天看来笨拙，却让我在七次大水里一次也没塌。',
+      '**我的脊背被车轮磨出了浅槽，最深处约三厘米，槽里积过雨水、落过桂花瓣，也承过挑担人的脚步。**人们总在桥上匆匆走过，很少有人停下来看看那些被磨圆的棱角——那是我最诚实的地方。',
+      '说桥，还得说说看不见的部分。水下有一层分水尖，用整块石头削成三角形，像鱼的脊背，能把洪水劈成两股，减少对桥墩的正面冲击。这些东西没人看得见，但少了它，我活不到今天。',
+      '如果要打比方，我更像个慢性子的人：不着急长高，也不着急变新。我身上最老的一块石头来自一百二十七年前，最新的一块是去年换的护栏——它们在同一座桥上，一起承担着每天上千次的脚步。',
+      '现在桥上装了路灯，夜里亮起来，像给我戴了顶帽子。我还是老样子：**能站一天，就为过桥的人站一天。**'
+    ]
+  },
+  {
+    id: 'w4', title: '慢慢来，比较快', cat: '议论文', by: '初三(5)班 · 周叙', time: '9 月',
+    score: 93,
+    excerpt: '我们习惯了把「快」等同于「好」。可真正把一件事做透的人，往往都慢：他们愿意在一道错题上停 20 分钟，愿意把一篇课文读上七遍。慢不是效率的敌人，浅才是。',
+    note: '论点集中、不并列铺开；用「慢不是效率的敌人，浅才是」做转折句，力度足。',
+    full: [
+      '我们习惯了把「快」等同于「好」：作业要快，刷题要快，连背单词都想着三天记完一本。可真正把一件事做透的人，往往都慢。',
+      '慢，是因为他们在做「有摩擦」的工作。一道错题停二十分钟，不是磨蹭，是在找错因；一篇课文读七遍，不是笨，是在让语言长出回声。',
+      '我见过一个数学很好的同学，他的错题本一年只写满两本，但每道题旁边都留着三种解法。他说，把一道题拆三次，比刷三十道题更赚。一个学期下来，他的分数涨得并不快，却没有掉过。',
+      '有人会说，考试不等人。这话没错。但「快」有两种：一种是手快，一种是心里有底。心里有底的人，看起来慢，上了考场反而不必回头检查。',
+      '**慢不是效率的敌人，浅才是。**真正拉开差距的，从来不是谁走得急，而是谁在走过的路上留下了脚印。'
+    ]
+  }
+];
+
+var workList = document.getElementById('work-list');
+var cat = 'all';
+
+function lenText(w) {
+  var t = w.full.join('').replace(/\*\*/g, '');
+  if (w.lang === 'en') {
+    return t.split(/\s+/).filter(function (x) { return x; }).length + ' 词';
+  }
+  return t.replace(/\s/g, '').length + ' 字';
+}
+function workHTML(w) {
+  return '<article class="essay-card">' +
+    '<div class="ec-top">' +
+      '<span class="ec-title">' + w.title + '</span>' +
+      '<span class="chip">' + w.cat + '</span>' +
+      '<span class="ec-score">' + w.score + ' 分</span>' +
+    '</div>' +
+    '<p class="ec-by">' + w.by + ' · ' + w.time + '</p>' +
+    '<p class="ec-excerpt">' + w.excerpt + '</p>' +
+    '<div class="ec-note"><b>点评：</b>' + w.note + '</div>' +
+    '<div class="ec-foot">' +
+      '<button class="btn-ghost" type="button" data-read="' + w.id + '">阅读全文</button>' +
+      '<span class="ec-len">全文 ' + lenText(w) + '</span>' +
+    '</div>' +
+  '</article>';
+}
+function renderWorks() {
+  var list = cat === 'all' ? WORKS : WORKS.filter(function (w) { return w.cat === cat; });
+  workList.innerHTML = list.length
+    ? list.map(workHTML).join('')
+    : '<p class="row-meta">这个分类下还没有收录的佳作。</p>';
+}
+renderWorks();
+
+document.getElementById('work-filter').addEventListener('click', function (e) {
+  var btn = e.target.closest('.flt');
+  if (!btn) return;
+  cat = btn.dataset.cat;
+  Array.prototype.forEach.call(this.querySelectorAll('.flt'), function (b) {
+    b.classList.toggle('on', b === btn);
+  });
+  renderWorks();
+});
+
+/* ============================================================
+   阅读全文：底部上滑弹框（手机 88vh / 宽屏居中卡片）
+   点遮罩、✕、收起、ESC 都能关；打开时锁住页面滚动
+   ============================================================ */
+var readMask = null, readFrom = null;
+
+function escHTML(s) {
+  return String(s).replace(/[&<>"]/g, function (c) {
+    return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c];
+  });
+}
+/* 段落里的 **…** → 亮点高亮 */
+function paraHTML(s) {
+  return '<p class="rd-p">' + escHTML(s).replace(/\*\*(.+?)\*\*/g, '<mark>$1</mark>') + '</p>';
+}
+
+function closeRead() {
+  if (!readMask) return;
+  readMask.remove();
+  readMask = null;
+  document.body.classList.remove('no-scroll');
+  if (readFrom && readFrom.focus) readFrom.focus();
+  readFrom = null;
+}
+
+function openRead(id) {
+  var w = null, i;
+  for (i = 0; i < WORKS.length; i++) { if (WORKS[i].id === id) w = WORKS[i]; }
+  if (!w) return;
+  if (readMask) closeRead();
+  readFrom = document.activeElement;
+
+  var mask = document.createElement('div');
+  mask.className = 'sheet-mask is-read';
+  mask.innerHTML =
+    '<div class="sheet sheet-read" role="dialog" aria-modal="true" aria-label="佳作全文">' +
+      '<div class="rd-head">' +
+        '<span class="rd-bar"></span>' +
+        '<div class="rd-titles">' +
+          '<span class="rd-title">' + escHTML(w.title) + '</span>' +
+          '<span class="chip">' + escHTML(w.cat) + '</span>' +
+          '<span class="ec-score">' + w.score + ' 分</span>' +
+        '</div>' +
+        '<p class="rd-meta">' + escHTML(w.by) + ' · ' + escHTML(w.time) + ' · 管理端推荐</p>' +
+        '<button class="rd-close" type="button" data-close aria-label="关闭">' +
+          '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" ' +
+            'stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>' +
+        '</button>' +
+      '</div>' +
+      '<div class="rd-body"' + (w.lang === 'en' ? ' data-lang="en"' : '') + '>' +
+        w.full.map(paraHTML).join('') +
+        '<div class="ec-note rd-note"><b>点评：</b>' + escHTML(w.note) + '</div>' +
+      '</div>' +
+      '<div class="rd-foot">' +
+        '<span class="rd-count">全文 ' + lenText(w) + '</span>' +
+        '<span class="spacer"></span>' +
+        '<button class="rd-done" type="button" data-close>收起</button>' +
+      '</div>' +
+    '</div>';
+  document.body.appendChild(mask);
+  document.body.classList.add('no-scroll');
+  readMask = mask;
+
+  mask.addEventListener('click', function (e) {
+    var t = e.target;
+    if (t === mask || (t.closest && t.closest('[data-close]'))) closeRead();
+  });
+  var closeBtn = mask.querySelector('.rd-close');
+  if (closeBtn) closeBtn.focus();
+}
+
+/* 卡片「阅读全文」→ 打开弹框（事件委托，筛选重渲染后依旧有效） */
+workList.addEventListener('click', function (e) {
+  var btn = e.target.closest && e.target.closest('[data-read]');
+  if (btn) openRead(btn.getAttribute('data-read'));
+});
+document.addEventListener('keydown', function (e) {
+  if (e.key === 'Escape' || e.keyCode === 27) closeRead();
+});
+</script>
+</body>
+</html>

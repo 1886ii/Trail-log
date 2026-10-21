@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="light">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#F5F6F8">
+<title>登录 · 学迹</title>
+<script>document.documentElement.classList.add('js-on');</script>
+<link rel="stylesheet" href="style.css?v=20261021a">
+</head>
+<body data-page="auth">
+
+<div class="auth">
+
+  <!-- ===== 左侧品牌区（仅电脑端显示） ===== -->
+  <aside class="auth-brand">
+
+    <div class="brand-top">
+      <div class="brand-mark">学</div>
+      <div>
+        <p class="brand-name">学迹</p>
+        <p class="brand-tag">初中 · 语数英 · AI 辅助</p>
+      </div>
+    </div>
+
+    <div class="brand-mid">
+      <h1 class="brand-h1">把「今晚学什么」<br>交给系统安排</h1>
+      <p class="brand-sub">出题 · 作答 · 批改 · 讲解 · 复习，每天一条线跑完，不再靠家长盯。</p>
+
+      <ul class="brand-list">
+        <li><span class="brand-dot"></span><span class="brand-li-t">今晚题目</span><span class="brand-li-m">数学 · 10 题 · 约 25 分钟</span></li>
+        <li><span class="brand-dot"></span><span class="brand-li-t">每天单词</span><span class="brand-li-m">新词 12 个 · 复习 28 个</span></li>
+        <li><span class="brand-dot"></span><span class="brand-li-t">计划阅读</span><span class="brand-li-m">《骆驼祥子》第 3 章</span></li>
+      </ul>
+    </div>
+
+    <p class="brand-foot">初三 · 上学期 · 第 6 周</p>
+  </aside>
+
+  <!-- ===== 右侧表单区 ===== -->
+  <main class="auth-side">
+
+    <button class="icon-btn auth-theme" type="button" onclick="toggleTheme(event)"
+            title="切换深色 / 浅色" aria-label="切换深色或浅色模式">
+      <span data-theme-icon></span>
+    </button>
+
+    <form class="auth-card" id="login-form" novalidate autocomplete="on">
+
+      <!-- 卡片内品牌头：手机 / 平板显示 -->
+      <div class="auth-mini">
+        <div class="brand-mark">学</div>
+        <div>
+          <p class="brand-name">学迹</p>
+          <p class="brand-tag">每天三件事，进步看得见</p>
+        </div>
+      </div>
+
+      <!-- 已登录提示条（检测到会话时出现） -->
+      <div class="auth-session" id="auth-session" hidden>
+        <span>上次登录：<b id="session-name">同学</b></span>
+        <button class="link-muted" type="button" id="session-continue">继续 →</button>
+      </div>
+
+      <h2 class="auth-title">欢迎回来</h2>
+      <p class="auth-desc">登录后继续今天的学习</p>
+
+      <!-- 错误提示 -->
+      <p class="auth-error" id="auth-error" hidden role="alert">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"
+             stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <circle cx="12" cy="12" r="8.6"/><path d="M12 7.8v4.6"/><circle cx="12" cy="15.9" r=".9" fill="currentColor" stroke="none"/>
+        </svg>
+        <span id="auth-error-text"></span>
+      </p>
+
+      <div class="auth-form">
+
+        <div class="field" id="field-account">
+          <label for="account">账号</label>
+          <div class="field-box">
+            <span class="field-ico">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"
+                   stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <circle cx="12" cy="8.4" r="3.6"/><path d="M5 19.8c0-3.5 3.1-5.9 7-5.9s7 2.4 7 5.9"/>
+              </svg>
+            </span>
+            <input id="account" name="account" type="text" inputmode="email"
+                   autocomplete="username" placeholder="手机号或邮箱" required>
+          </div>
+        </div>
+
+        <div class="field" id="field-password">
+          <label for="password">密码</label>
+          <div class="field-box">
+            <span class="field-ico">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"
+                   stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <rect x="4.8" y="10.4" width="14.4" height="9.6" rx="2.4"/>
+                <path d="M8.4 10.4V7.8a3.6 3.6 0 0 1 7.2 0v2.6"/>
+              </svg>
+            </span>
+            <input id="password" name="password" type="password"
+                   autocomplete="current-password" placeholder="请输入密码" required>
+            <button class="field-eye" type="button" id="toggle-pwd"
+                    aria-label="显示密码" title="显示 / 隐藏密码"></button>
+          </div>
+        </div>
+
+        <div class="login-row">
+          <label class="checkbox">
+            <input type="checkbox" id="remember" name="remember">
+            <span>记住这台设备</span>
+          </label>
+          <button class="link-muted" type="button" id="forgot">忘记密码</button>
+        </div>
+
+        <button class="btn-primary" type="submit" id="submit-btn">
+          <span class="btn-label">登 录</span>
+          <span class="btn-spin" aria-hidden="true"></span>
+        </button>
+
+        <p class="auth-hint" id="auth-hint">
+          账号由家长在管理端建档时开好（1 账号 = 1 学生），没有绑定码这一步。<br>
+          演示账号：<code>jiayu</code> / <code>815203</code> · 全功能　
+          <code>yutong</code> / <code>604712</code> · 学习专注　
+          <code>xiaozhou</code> / <code>390845</code> · 仅看记录
+        </p>
+
+      </div>
+    </form>
+
+    <p class="auth-copy">学迹 · 家庭试用版 v0.1</p>
+  </main>
+
+</div>
+
+<script src="fx.js?v=20261021a"></script>
+<script src="app.js?v=20261021a"></script>
+</body>
+</html>

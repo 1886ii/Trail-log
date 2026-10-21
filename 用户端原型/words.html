@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="light">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#F5F6F8">
+<title>单词 · 学迹</title>
+<script>document.documentElement.classList.add('js-on');</script>
+<link rel="stylesheet" href="style.css?v=20261021a">
+</head>
+<body data-page="words">
+
+<div class="app">
+<main class="main">
+
+  <header class="topbar" id="topbar"></header>
+
+  <div class="content">
+
+    <!-- 背诵卡列表（管理端大模型生成 / 导入，一卡一词） -->
+    <section class="section reveal">
+      <h2 class="section-title">今日单词 <span class="count">· 管理端发布 · 新词 5 · 复习 4 · 点卡片看释义</span></h2>
+      <div class="word-grid" id="word-grid"><!-- JS 渲染 --></div>
+    </section>
+
+  </div>
+</main>
+</div>
+
+<script src="fx.js?v=20261021a"></script>
+<script src="app.js?v=20261021a"></script>
+<script>
+/* ---------- 词数据（演示：正式版由管理端经大模型生成或批量导入后下发） ---------- */
+var WORDS = [
+  { word: 'abandon',   phon: '/əˈbændən/',      mean: 'v. 放弃；抛弃；遗弃',       eg: 'He abandoned his car in the snow.', egCn: '他把车丢在雪地里不管了。', tag: 'new' },
+  { word: 'absorb',    phon: '/əbˈzɔːb/',        mean: 'v. 吸收；使专心',           eg: 'Plants absorb water through roots.', egCn: '植物通过根吸收水分。',     tag: 'new' },
+  { word: 'academic',  phon: '/ˌækəˈdemɪk/',     mean: 'adj. 学业的；学术的',       eg: 'Her academic record is amazing.',   egCn: '她的学业成绩非常出色。',   tag: 'new' },
+  { word: 'accent',    phon: '/ˈæksent/',        mean: 'n. 口音；重音',             eg: 'He speaks with a southern accent.', egCn: '他说话带南方口音。',       tag: 'rev' },
+  { word: 'accept',    phon: '/əkˈsept/',        mean: 'v. 接受；认可',             eg: 'Please accept my apology.',         egCn: '请接受我的道歉。',         tag: 'rev' },
+  { word: 'access',    phon: '/ˈækses/',         mean: 'n. 通道；使用权 v. 访问',   eg: 'Students have access to the lab.',  egCn: '学生可以使用实验室。',     tag: 'new' },
+  { word: 'accompany', phon: '/əˈkʌmpəni/',      mean: 'v. 陪伴；伴随',             eg: 'I accompanied her to the station.', egCn: '我陪她去了车站。',         tag: 'rev' },
+  { word: 'achieve',   phon: '/əˈtʃiːv/',        mean: 'v. 达到；实现',             eg: 'You can achieve your goal.',        egCn: '你能实现自己的目标。',     tag: 'rev' },
+  { word: 'adapt',     phon: '/əˈdæpt/',         mean: 'v. 适应；改编',             eg: 'She adapted quickly to city life.', egCn: '她很快适应了城市生活。',   tag: 'new' }
+];
+
+/* ---------- 渲染卡片列表 ---------- */
+function tagChip(t) {
+  if (t === 'new') return '<span class="wf-tag new">新词</span>';
+  if (t === 'rev') return '<span class="wf-tag rev">复习</span>';
+  return '';
+}
+function cardHTML(w, i) {
+  return '<button class="word-face" type="button" data-i="' + i + '" aria-label="单词卡 ' + w.word + '，点击翻面查看释义">' +
+    '<span class="wf-inner">' +
+      '<span class="wf-front">' +
+        tagChip(w.tag) +
+        '<span class="wf-speak" role="button" tabindex="0" data-word="' + w.word + '" aria-label="朗读 ' + w.word + '" title="朗读">' +
+          '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' +
+            '<path d="M4.2 9.3v5.4h3.3L12.8 19V5L7.5 9.3H4.2z"/>' +
+            '<path d="M16.1 9a4.4 4.4 0 0 1 0 6"/>' +
+            '<path d="M18.5 6.7a7.8 7.8 0 0 1 0 10.6"/>' +
+          '</svg>' +
+        '</span>' +
+        '<span class="wf-word">' + w.word + '</span>' +
+        '<span class="wf-phon">' + w.phon + '</span>' +
+      '</span>' +
+      '<span class="wf-back">' +
+        '<span class="wf-mean">' + w.mean + '</span>' +
+        '<span class="wf-eg">' + w.eg + '<br>' + w.egCn + '</span>' +
+      '</span>' +
+    '</span>' +
+  '</button>';
+}
+document.getElementById('word-grid').innerHTML = WORDS.map(cardHTML).join('');
+
+/* ---------- 朗读（方案A：浏览器本地 TTS，零成本；正式版换服务器预生成 mp3） ---------- */
+function speak(word, rate) {
+  try {
+    if (!window.speechSynthesis) return;
+    speechSynthesis.cancel();               /* 打断上一段，连点不叠音 */
+    var u = new SpeechSynthesisUtterance(word);
+    u.lang = 'en-US';
+    u.rate = rate || 0.9;                   /* 稍慢，适合学生听清音节 */
+    speechSynthesis.speak(u);
+  } catch (e) {}
+}
+
+/* 事件委托：点喇叭朗读（不翻面），点卡片其余部分翻面 */
+var gridEl = document.getElementById('word-grid');
+gridEl.addEventListener('click', function (e) {
+  var sp = e.target.closest('.wf-speak');
+  if (sp) {
+    e.stopPropagation();
+    speak(sp.dataset.word);
+    sp.classList.add('playing');
+    setTimeout(function () { sp.classList.remove('playing'); }, 1000);
+    return;
+  }
+  var card = e.target.closest('.word-face');
+  if (card) card.classList.toggle('flipped');
+});
+gridEl.addEventListener('keydown', function (e) {
+  if (e.key !== 'Enter' && e.key !== ' ') return;
+  var sp = e.target.closest ? e.target.closest('.wf-speak') : null;
+  if (sp) {
+    e.preventDefault();
+    speak(sp.dataset.word);
+    sp.classList.add('playing');
+    setTimeout(function () { sp.classList.remove('playing'); }, 1000);
+  }
+});
+</script>
+</body>
+</html>

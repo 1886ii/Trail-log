@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="light">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#F5F6F8">
+<title>全科 · 学迹管理端</title>
+<link rel="stylesheet" href="style.css?v=20261021c">
+</head>
+<body data-page="all" data-title="全科" data-sub="九门科目 · 跨科数据与错题本（占位，待后续实现）">
+
+<div class="app">
+  <aside class="sb" id="sb"></aside>
+  <div class="main">
+    <header class="tb" id="tb"></header>
+    <div class="content">
+
+      <!-- 位置保留：全科模块（学生端 all.html 对应的管理端入口） -->
+      <section class="sec">
+        <div class="card" style="display:flex;align-items:center;gap:14px;flex-wrap:wrap">
+          <span class="ico" style="width:38px;height:38px;border-radius:11px;display:grid;place-items:center;
+            background:var(--brand-soft);color:var(--brand)"></span>
+          <div style="flex:1;min-width:220px">
+            <div style="font-size:14.5px;font-weight:600">这个模块先留位置</div>
+            <div class="row-meta" style="margin-top:2px">
+              全科掌握度、跨科错题本、四类引擎的科目接入开关 —— 排在 P5 阶段；当前原型只保留导航位与页面骨架。</div>
+          </div>
+          <span class="chip warn">待实现</span>
+        </div>
+      </section>
+
+      <section class="sec">
+        <div class="sec-title">九门科目一览 <span class="count">· 三主科已开放（在题库 / 任务发布里出题），其余待接入</span></div>
+        <div class="soon-grid" id="grid"></div>
+      </section>
+
+      <section class="sec">
+        <div class="sec-title">四类引擎 <span class="count">· 接入即套用，不重复造轮子</span></div>
+        <div class="card">
+          <div class="kv">
+            <div class="kv-row"><div class="kv-k">计算推演型</div><div class="kv-v"><b>数 · 物 · 化</b> —— 核心动作「练」：出题 → 作答 → 批改 → 讲解 → 错题重练</div></div>
+            <div class="kv-row"><div class="kv-k">语言记忆型</div><div class="kv-v"><b>英语</b> —— 核心动作「背」：背诵 → 检查 → 扩展，间隔排程复习</div></div>
+            <div class="kv-row"><div class="kv-k">阅读写作型</div><div class="kv-v"><b>语文 · 英语写作</b> —— 核心动作「写」：命题引导 → 写作 → 结构点评与升格</div></div>
+            <div class="kv-row"><div class="kv-k">记忆理解型</div><div class="kv-v"><b>生 · 史 · 道法 · 地</b> —— 核心动作「记」：知识点拆条 → 每日记忆卡 → 检查</div></div>
+          </div>
+        </div>
+      </section>
+
+    </div>
+  </div>
+</div>
+
+<script src="demo.js?v=20261021c"></script>
+<script src="admin.js?v=20261021c"></script>
+<script>
+(function () {
+  var E = ADMIN.esc, I = ADMIN.icon;
+  var sid = ADMIN.currentId();
+  var ms = DB.get('mastery', {})[sid] || [];
+  var SUBJ = [
+    { name: '数学', eng: 'math', engine: '计算推演型' },
+    { name: '语文', eng: 'chinese', engine: '阅读写作型' },
+    { name: '英语', eng: 'english', engine: '语言记忆型' },
+    { name: '物理', eng: 'physics', engine: '计算推演型' },
+    { name: '化学', eng: 'chemistry', engine: '计算推演型' },
+    { name: '生物', eng: 'biology', engine: '记忆理解型' },
+    { name: '历史', eng: 'history', engine: '记忆理解型' },
+    { name: '道德与法治', eng: 'politics', engine: '记忆理解型' },
+    { name: '地理', eng: 'geography', engine: '记忆理解型' }
+  ];
+  document.getElementById('grid').innerHTML = SUBJ.map(function (x) {
+    var m = ms.filter(function (y) { return y.subject === x.name; })[0];
+    var open = m && !m.soon;
+    return '<div class="soon-card">' +
+      '<div class="soon-ico">' + (open ? I('check2') : I('clock')) + '</div>' +
+      '<h4>' + E(x.name) + '</h4>' +
+      (open
+        ? '<p>已开放 · 掌握度 ' + m.v + '%（' + (m.trend > 0 ? '+' : '') + m.trend + '%）· ' + x.engine + '</p>' +
+          '<a class="btn btn-sm" href="qbank.html" style="margin-top:10px">出题 / 管理题目</a>'
+        : '<p><span class="chip">P5 接入</span> ' + x.engine + '</p>' +
+          '<button class="btn btn-sm" disabled style="margin-top:10px;opacity:.5">待开放</button>') +
+    '</div>';
+  }).join('');
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,739 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="light">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#F5F6F8">
+<title>首页 · 学迹</title>
+<script>document.documentElement.classList.add('js-on');</script>
+<link rel="stylesheet" href="style.css?v=20261021a">
+</head>
+<body data-page="home">
+
+<div class="app">
+<main class="main">
+
+  <header class="topbar" id="topbar"></header>
+
+  <div class="content content-wide">
+
+    <div class="home-grid">
+
+      <!-- ============ 左：发布入口 + 图文记录流 ============ -->
+      <div class="home-feed">
+
+        <!-- 发布入口 -->
+        <a class="composer-entry reveal" href="post.html">
+          <span class="avatar" id="ce-avatar">宇</span>
+          <span class="ce-fake">记一段感想、发几张照片、写条笔记……</span>
+          <span class="ce-act" title="发图文">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"
+                 stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M12 5v14"/><path d="M5 12h14"/>
+            </svg>
+          </span>
+        </a>
+
+        <!-- 记录流 -->
+        <section class="section reveal" style="margin-top:16px">
+          <h2 class="section-title">我的记录 <span class="count">· 图片、感想与笔记</span></h2>
+          <div class="feed" id="feed"><!-- 用户发布的帖子会插到最上面，下面是演示数据 --></div>
+        </section>
+
+      </div>
+
+      <!-- ============ 右：信息栏（日历 · 天气 · 每日一句 · 打卡） ============ -->
+      <aside class="home-side">
+
+        <!-- 天气 -->
+        <div class="side-card reveal">
+          <p class="side-title">今天 · 你所在的城市</p>
+          <div class="wx-now">
+            <span class="wx-ico">⛅</span>
+            <div>
+              <p class="wx-temp">14<i>°C</i></p>
+              <p class="wx-desc">多云 · 17° / 9° · 空气优</p>
+            </div>
+          </div>
+          <div class="wx-forecast">
+            <span class="wx-f"><span class="d">周日</span><span class="e">☀️</span><span>16°/8°</span></span>
+            <span class="wx-f"><span class="d">周一</span><span class="e">🌧️</span><span>13°/10°</span></span>
+            <span class="wx-f"><span class="d">周二</span><span class="e">☁️</span><span>12°/8°</span></span>
+            <span class="wx-f"><span class="d">周三</span><span class="e">☀️</span><span>15°/7°</span></span>
+          </div>
+        </div>
+
+        <!-- 日历 -->
+        <div class="side-card reveal">
+          <div class="cal-head">
+            <b id="cal-title">10 月</b>
+            <span id="cal-year">2026</span>
+          </div>
+          <div class="cal-grid" id="cal"></div>
+          <p class="cal-note"><b>●</b> 有记录的日子 · 本月已记 <b id="cal-count">9</b> 天</p>
+        </div>
+
+        <!-- 每日一句 -->
+        <div class="side-card quote-card reveal">
+          <p class="side-title">每日一句
+            <button class="quote-refresh" type="button" id="quote-next">换一句</button>
+          </p>
+          <p class="quote-text" id="quote-text">种一棵树最好的时间是十年前，其次是现在。</p>
+          <p class="quote-author" id="quote-author">—— 谚语</p>
+        </div>
+
+        <!-- 本周打卡 -->
+        <div class="side-card reveal">
+          <p class="side-title">本周打卡 <span style="font-weight:400;color:var(--text-3)">6 / 7 天</span></p>
+          <div class="week-strip">
+            <span class="week-day done"><i>✓</i>一</span>
+            <span class="week-day done"><i>✓</i>二</span>
+            <span class="week-day done"><i>✓</i>三</span>
+            <span class="week-day done"><i>✓</i>四</span>
+            <span class="week-day done"><i>✓</i>五</span>
+            <span class="week-day done"><i>✓</i>六</span>
+            <span class="week-day today"><i>…</i>日</span>
+          </div>
+        </div>
+
+      </aside>
+
+    </div>
+
+  </div>
+</main>
+</div>
+
+<!-- 评论表情面板：全局共用一个，点击表情按钮时动态定位到该输入框上方 -->
+<div class="emoji-panel cmt-emoji-pop" id="cmt-emoji-pop" hidden></div>
+
+<script src="emoji.js?v=20261021a"></script>
+<script src="fx.js?v=20261021a"></script>
+<script src="app.js?v=20261021a"></script>
+<script>
+/* ============================================================
+   首页脚本：记录流（演示 + 本地发布）、评论、日历、每日一句
+   ============================================================ */
+
+/* ---------- 图标 ---------- */
+var HEART = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" ' +
+            'stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' +
+            '<path d="M12 20.2S4 15.1 4 9.6a4.3 4.3 0 0 1 8-2.2 4.3 4.3 0 0 1 8 2.2c0 5.5-8 10.6-8 10.6z"/></svg>';
+var CHAT  = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" ' +
+            'stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' +
+            '<path d="M20 11.6a7.6 7.6 0 0 1-7.7 7.4 8 8 0 0 1-3.2-.6L4 19.6l1.3-3.6a7.2 7.2 0 0 1-1.3-4.4A7.6 7.6 0 0 1 12.3 4 7.6 7.6 0 0 1 20 11.6z"/></svg>';
+
+/* 演示数据（正式版来自服务端）。cmts = 已有评论 */
+var DEMO_POSTS = [
+  {
+    name: '小宇', initial: '宇', time: '今天 18:42', tag: '图文记录',
+    title: '一元二次方程终于开窍了',
+    html: '<p>今天把配方法彻底弄懂了 🎉 原来核心就一句话：<b>凑完全平方</b>。</p><p>错题本里那 3 道题重做全对，明天让老师再出两道变式试试。</p>',
+    imgs: [
+      { style: 'background:linear-gradient(135deg,#4A83FF,#7C5CFF)', label: '📷 笔记 P48 · 配方法三步' },
+      { style: 'background:linear-gradient(135deg,#17B26A,#0E7A8A)', label: '📷 错题重做 · 全对' }
+    ],
+    likes: 12,
+    cmts: [
+      { id: 'c1', name: '妈妈', initial: '妈', time: '今天 19:02', text: '太棒了！晚饭给你加了鸡腿 🍗' },
+      { id: 'c2', name: '小航', initial: '航', time: '今天 19:20', text: '学霸带带我，那道变式我也卡了半天' },
+      { id: 'c3', name: '小宇', initial: '宇', time: '今天 19:26', text: '周末一起刷，我把笔记拍给你', replyTo: '小航', replyToId: 'c2' }
+    ]
+  },
+  {
+    name: '小宇', initial: '宇', time: '昨天 21:05', tag: '笔记',
+    title: '',
+    html: '<p>《骆驼祥子》第 3 章读完，印象最深的一句：</p><blockquote>“他甚至于一想起车，就想起自己的脸。”</blockquote><p>祥子把车当成脸面，可越是这样，后面丢车的时候才越疼吧。读后感素材 +1。</p>',
+    imgs: [],
+    likes: 5,
+    cmts: [
+      { name: '妈妈', initial: '妈', time: '昨天 21:40', text: '这句摘抄得真好，读后感记得用上' }
+    ]
+  },
+  {
+    name: '小宇', initial: '宇', time: '10 月 8 日', tag: '随感',
+    title: '晚跑 3 公里',
+    html: '<p>跑完第三公里的那一刻，一天的烦心事好像都被喘出去了。明天继续。</p>',
+    imgs: [
+      { style: 'background:linear-gradient(135deg,#E08A00,#D92D20)', label: '📷 操场 · 晚上 9 点' }
+    ],
+    likes: 8, cmts: []
+  },
+  {
+    name: '小宇', initial: '宇', time: '10 月 6 日', tag: '图文记录',
+    title: '《昆虫记》观察日记 · 九连拍',
+    html: '<p>阳台上的甲虫标本观察满两周了，从卵到幼虫再到成虫，全程记录 📸</p><p>法布尔说得对：耐心是观察者最好的工具。</p>',
+    imgs: [
+      { style: 'background:linear-gradient(135deg,#4A83FF,#7C5CFF)', label: '📷 Day1 · 卵' },
+      { style: 'background:linear-gradient(135deg,#17B26A,#0E7A8A)', label: '📷 Day3 · 卵' },
+      { style: 'background:linear-gradient(135deg,#E08A00,#D92D20)', label: '📷 Day5 · 破卵' },
+      { style: 'background:linear-gradient(135deg,#9333EA,#DB2777)', label: '📷 Day7 · 幼虫' },
+      { style: 'background:linear-gradient(135deg,#0EA5E9,#2563EB)', label: '📷 Day9 · 幼虫' },
+      { style: 'background:linear-gradient(135deg,#F59E0B,#EF4444)', label: '📷 Day11 · 蜕皮' },
+      { style: 'background:linear-gradient(135deg,#10B981,#059669)', label: '📷 Day13 · 蛹' },
+      { style: 'background:linear-gradient(135deg,#6366F1,#8B5CF6)', label: '📷 Day14 · 羽化' },
+      { style: 'background:linear-gradient(135deg,#EC4899,#8B5CF6)', label: '📷 成虫 · 全家福' }
+    ],
+    likes: 21, cmts: []
+  }
+];
+
+function loadUserPosts() {
+  try { return JSON.parse(localStorage.getItem('xj-feed') || '[]'); }
+  catch (e) { return []; }
+}
+
+function escHtml(s) {
+  return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;')
+                  .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
+/* 评论正文：先把 emoji（含 ZWJ 序列 / 变体选择符）挑出来放大显示，
+   再整体转义 —— 顺序不能反，否则 & < > 会被当成 emoji 边界处理 */
+var EMOJI_RE = /(\p{Extended_Pictographic}(?:\uFE0F|\u200D\p{Extended_Pictographic})*)/gu;
+function cmtText(raw) {
+  return escHtml(raw).replace(EMOJI_RE, '<i class="emj">$1</i>');
+}
+
+function commentItemHTML(c, isSub) {
+  var at = c.replyTo ? '<span class="cmt-at">回复 @' + escHtml(c.replyTo) + '</span>' : '';
+  /* 回复按钮携带：对方名字 + 所属根评论 id（回复别人的回复也归到根评论下） */
+  var rootId = isSub ? c.replyToId : c.id;
+  return '<div class="comment-item">' +
+    '<span class="avatar">' + (c.initial || c.name.charAt(0)) + '</span>' +
+    '<div class="comment-body">' +
+      '<p class="comment-name">' + escHtml(c.name) + '</p>' +
+      '<p class="comment-text">' + at + cmtText(c.text) + '</p>' +
+      '<p class="comment-meta">' +
+        '<span class="comment-time">' + escHtml(c.time) + '</span>' +
+        '<button class="cmt-reply" type="button" data-name="' + escHtml(c.name) +
+          '" data-root="' + escHtml(rootId || '') + '">回复</button>' +
+      '</p>' +
+    '</div>' +
+  '</div>';
+}
+
+/* 评论数据规范化（每次渲染前跑一遍，幂等）：
+   1. 旧版扁平数据没有 id → 按「帖子种子 + 序号」补一个稳定 id（刷新后不变）
+   2. 旧版「回复 @xx」只有 replyTo 没有 replyToId → 尽量归位到 xx 的顶级评论下
+   3. replyToId 指向的根评论已不存在（脏数据） → 降级为顶级，保留 @标记 */
+function normalizeCmts(p, seed) {
+  var cmts = p.cmts || [];
+  cmts.forEach(function (c, i) {
+    if (!c.id) c.id = seed + '-c' + (i + 1);
+  });
+  cmts.forEach(function (c) {
+    if (!c.replyToId && c.replyTo) {
+      var target = null;
+      for (var j = 0; j < cmts.length; j++) {
+        var t = cmts[j];
+        if (t.id !== c.id && t.name === c.replyTo && !t.replyToId) target = t;  /* 取最近一条同名顶级评论 */
+      }
+      if (target) c.replyToId = target.id;
+    }
+  });
+  var ids = {};
+  cmts.forEach(function (c) { ids[c.id] = 1; });
+  cmts.forEach(function (c) {
+    if (c.replyToId && !ids[c.replyToId]) { delete c.replyToId; }
+  });
+  return cmts;
+}
+
+/* 抖音式两级分组：顶级评论平铺，回复缩进挂在所属根评论下 */
+function renderComments(cmts) {
+  var roots = cmts.filter(function (c) { return !c.replyToId; });
+  if (!roots.length) return '';
+  return roots.map(function (r) {
+    var subs = cmts.filter(function (c) { return c.replyToId === r.id; });
+    return commentItemHTML(r, false) +
+           (subs.length
+             ? '<div class="cmt-subs">' + subs.map(function (c) { return commentItemHTML(c, true); }).join('') + '</div>'
+             : '');
+  }).join('');
+}
+
+function extraImgCount(bodySrcs, shown) {
+  if (!bodySrcs.length) return 0;
+  var need = {};
+  shown.forEach(function (s) { need[s] = (need[s] || 0) + 1; });
+  var rest = 0;
+  bodySrcs.forEach(function (s) {
+    if (need[s] > 0) need[s] -= 1; else rest += 1;
+  });
+  return rest;
+}
+
+function postHTML(p, seed) {
+  /* 兼容旧数据：comments 数字 → cmts 数组 */
+  if (!p.cmts) p.cmts = [];
+  normalizeCmts(p, seed);
+
+  var title = p.title ? '<p class="post-title-line">' + p.title + '</p>' : '';
+
+  /* ── 折叠态结构（同演示帖卡片）：文字(去图) + 九宫格图区(最多9张) ──
+     正文图片保留原位不动；折叠/短帖时以九宫格展示（封面排第一），
+     点「展开全文」后九宫格消失、图片恢复正文原位 */
+  var bodyHtml = p.html;
+  var gridHtml = '';
+  var gridOn = false;
+  var hideBodyImgs = false;      /* 折叠态是否隐藏正文图（有图区/明确不要图 都隐藏） */
+
+  /* 正文里的全部图（含重复），后面要算「有几张没进卡片」 */
+  var bodySrcs = [];
+  var reImg = /<img[^>]*\ssrc="([^"]+)"[^>]*>/g, mm;
+  while ((mm = reImg.exec(bodyHtml))) bodySrcs.push(mm[1]);
+
+  var shownSrcs = [];            /* 卡片九宫格实际显示出去的图 */
+  if (p.imgs && p.imgs.length) {
+    if (typeof p.imgs[0] === 'string') {
+      /* 发帖页勾选的图（字符串数组）：就按勾选顺序铺这几张，正文其余图不参与 */
+      gridOn = true;
+      hideBodyImgs = true;
+      shownSrcs = p.imgs.slice(0, 9);
+      gridHtml = '<div class="post-imgs post-grid-f n' + shownSrcs.length + '">' +
+        shownSrcs.map(function (s) { return '<img src="' + s + '" alt="">'; }).join('') +
+        '</div>';
+    } else {
+      var phs = p.imgs.slice(0, 9).map(function (im) {
+        return '<div class="ph" style="' + im.style + '">' + im.label + '</div>';
+      });
+      gridHtml = '<div class="post-imgs n' + phs.length + '">' + phs.join('') + '</div>';
+    }
+  } else if (p.noCardImgs) {           /* 发帖时一张都没勾 → 图片不出现在卡片上 */
+    hideBodyImgs = true;
+  } else {
+    var srcs = bodySrcs.slice();
+    if (p.cover && srcs.indexOf(p.cover) !== -1) {   /* 选中的封面排第一 */
+      srcs.splice(srcs.indexOf(p.cover), 1);
+      srcs.unshift(p.cover);
+    }
+    srcs = srcs.slice(0, 9);
+    if (srcs.length) {
+      gridOn = true;
+      hideBodyImgs = true;
+      shownSrcs = srcs;
+      gridHtml = '<div class="post-imgs post-grid-f n' + srcs.length + '">' +
+        srcs.map(function (s) { return '<img src="' + s + '" alt="">'; }).join('') +
+        '</div>';
+    }
+  }
+
+  /* 正文里没进卡片的图：折叠态下正文图是隐藏的 → 这 N 张谁都看不到。
+     必须给个「展开」的入口，否则短文字帖（不足 6 行）没有按钮 = 内容丢失。 */
+  var extraImgs = extraImgCount(bodySrcs, shownSrcs);
+
+  var cmtItems = renderComments(p.cmts);
+  var comments =
+    '<div class="post-comments" hidden>' +
+      '<div class="comment-list">' + cmtItems + '</div>' +
+      '<div class="comment-form">' +
+        '<span class="avatar">' + USER.initial + '</span>' +
+        '<input class="comment-input" type="text" placeholder="写评论，回车发送…" maxlength="200">' +
+        '<button class="emoji-btn cmt-emoji" type="button" title="表情" aria-label="插入表情">😊</button>' +
+        '<button class="comment-send" type="button">发送</button>' +
+      '</div>' +
+    '</div>';
+
+  return '<article class="post' + ((gridOn || hideBodyImgs) ? ' grid-on' : '') + '"' +
+    (p.id ? ' data-pid="' + p.id + '"' : '') +
+    (bodySrcs.length ? ' data-img-all="' + bodySrcs.length + '"' : '') +
+    (extraImgs ? ' data-extra-img="' + extraImgs + '"' : '') + '>' +
+    '<div class="post-head">' +
+      '<span class="avatar">' + (p.initial || '宇') + '</span>' +
+      '<span class="post-who"><b>' + (p.name || '小宇') + '</b><span>' + p.time + '</span></span>' +
+      '<span class="chip brand">' + p.tag + '</span>' +
+    '</div>' +
+    (title || '') +
+    '<div class="post-foldwrap">' +
+      '<div class="post-body">' + bodyHtml + '</div>' +
+    '</div>' +
+    gridHtml +
+    '<button class="fold-btn" type="button" hidden></button>' +
+    '<div class="post-foot">' +
+      '<button class="foot-btn like-btn" type="button" aria-label="点赞">' + HEART + '<b>' + p.likes + '</b></button>' +
+      '<button class="foot-btn comment-btn" type="button" aria-label="评论">' + CHAT + '<b>' + p.cmts.length + '</b></button>' +
+      '<span style="flex:1"></span>' +
+      (p.mine ? '<span class="chip ok">刚发布</span>' : '') +
+    '</div>' +
+    comments +
+  '</article>';
+}
+
+function renderFeed() {
+  var feed = document.getElementById('feed');
+  if (!feed) return;
+  cmtClosePop();                      /* 重渲染会换掉旧的按钮节点，先收面板 */
+  var userPosts = loadUserPosts().map(function (p) { p.mine = true; return p; });
+  feed.innerHTML =
+    userPosts.map(function (p) { return postHTML(p, p.id || 'up'); }).join('') +
+    DEMO_POSTS.map(function (p, i) { return postHTML(p, 'demo' + i); }).join('');
+  initFold();
+}
+
+/* ---------- 长帖折叠：正文超过约 6 行 → 截断 + 渐隐遮罩 + 展开全文 ---------- */
+function foldLimit(body) {
+  var lh = parseFloat(getComputedStyle(body).lineHeight) || 25;
+  return lh * 6 + 4;
+}
+function setFolded(card, folded) {
+  var body = card.querySelector('.post-body');
+  var btn  = card.querySelector('.fold-btn');
+  /* 两种折叠原因要分开处理：
+     textFold=1 文字本身超 6 行 → 裁高度 + 渐隐遮罩；
+     只有「图没全放进卡片」时不能裁高度（短文字会被遮罩糊掉），只切九宫格/正文图 */
+  var needClamp = card.dataset.textFold === '1';
+  card.classList.toggle('expanded', !folded);
+  if (folded && needClamp) {
+    body.classList.add('folded');
+    body.style.maxHeight = foldLimit(body) + 'px';
+  } else {
+    body.classList.remove('folded');
+    body.style.maxHeight = '';
+  }
+  btn.textContent = folded ? (btn.dataset.foldLabel || '展开全文 ▾') : '收起 ▴';
+}
+function initFold() {
+  feedEl.querySelectorAll('.post').forEach(function (card) {
+    var body = card.querySelector('.post-body');
+    var btn  = card.querySelector('.fold-btn');
+    if (!body || !btn) return;
+    /* 量文字高度：临时隐藏图片 —— 图片不参与「是否超过 6 行」的判定 */
+    body.classList.add('measuring');
+    var h = body.scrollHeight;
+    body.classList.remove('measuring');
+    var textOver = h > foldLimit(body);
+    var extra = parseInt(card.getAttribute('data-extra-img') || '0', 10) || 0;
+    var all   = parseInt(card.getAttribute('data-img-all') || '0', 10) || 0;
+    card.dataset.textFold = textOver ? '1' : '';
+
+    if (textOver || extra > 0) {
+      /* 按钮文案统一「展开全文」（短帖有图没进卡片时也用它）；
+         具体还剩几张图放到 title 里，避免同一动作出现两种说法 */
+      btn.dataset.foldLabel = '展开全文 ▾';
+      btn.title = (extra > 0 && !textOver) ? ('正文里还有 ' + extra + ' 张图没放进卡片') : '';
+      setFolded(card, true);
+      btn.hidden = false;
+    } else {
+      btn.hidden = true;                       /* 短帖：不折叠；有图则九宫格常显 */
+      card.classList.remove('expanded');
+      body.classList.remove('folded');
+      body.style.maxHeight = '';
+    }
+  });
+}
+
+/* ---------- 互动：点赞 / 展开评论 / 发评论（事件委托） ---------- */
+var feedEl = document.getElementById('feed');
+
+function addComment(postEl, rawText) {
+  var text = (rawText || '').trim();
+  if (!text) return;
+  var input = postEl.querySelector('.comment-input');
+  var list  = postEl.querySelector('.comment-list');
+  var count = postEl.querySelector('.comment-btn b');
+
+  /* 回复状态：挂到哪个根评论下 + @ 谁 */
+  var replyTo   = input && input.dataset.reply    ? input.dataset.reply    : '';
+  var replyToId = input && input.dataset.replyToId? input.dataset.replyToId: '';
+
+  var nodeHtml = commentItemHTML({
+    id: 'c' + Date.now(),
+    name: USER.name, initial: USER.initial, time: '刚刚', text: text,
+    replyTo: replyTo, replyToId: replyToId
+  }, !!replyToId);
+
+  /* 实时插入：有 replyToId → 挂到对应根评论的 .cmt-subs 里；否则平铺为顶级 */
+  if (replyToId) {
+    var rootBtn  = list.querySelector('.cmt-reply[data-root="' + replyToId + '"]');
+    var rootItem = rootBtn && rootBtn.closest('.comment-item');
+    if (rootItem) {
+      var subs = rootItem.nextElementSibling;
+      if (!subs || !subs.classList || !subs.classList.contains('cmt-subs')) {
+        rootItem.insertAdjacentHTML('afterend', '<div class="cmt-subs"></div>');
+        subs = rootItem.nextElementSibling;
+      }
+      subs.insertAdjacentHTML('beforeend', nodeHtml);
+    } else {
+      list.insertAdjacentHTML('beforeend', nodeHtml);   /* 旧数据无 id，兜底平铺 */
+    }
+  } else {
+    list.insertAdjacentHTML('beforeend', nodeHtml);
+  }
+
+  if (input) {
+    input.value = '';
+    delete input.dataset.reply;
+    delete input.dataset.replyToId;
+    input.placeholder = '写评论，回车发送…';
+  }
+  if (count) count.textContent = (parseInt(count.textContent, 10) || 0) + 1;
+
+  /* 自己发布的帖子：评论持久化 */
+  var pid = postEl.getAttribute('data-pid');
+  if (pid) {
+    var posts = loadUserPosts();
+    for (var i = 0; i < posts.length; i++) {
+      if (String(posts[i].id) === pid) {
+        if (!posts[i].cmts) posts[i].cmts = [];
+        posts[i].cmts.push({
+          id: 'c' + Date.now(),
+          name: USER.name, initial: USER.initial, time: '刚刚', text: text,
+          replyTo: replyTo, replyToId: replyToId
+        });
+        break;
+      }
+    }
+    try { localStorage.setItem('xj-feed', JSON.stringify(posts)); } catch (e) {}
+  }
+}
+
+/* ---------- 评论表情面板（全局一个，动态定位到当前输入框上方） ----------
+   表情数据与分类渲染在 emoji.js（EMOJI），与阅读页留言墙共用同一套 */
+var cmtPop     = document.getElementById('cmt-emoji-pop');
+var cmtPopBtn  = null;    /* 当前表情面板对应的按钮 */
+var cmtPopInp  = null;    /* 当前面板要写入的输入框 */
+
+/* 定位：优先浮在按钮上方，上方放不下就落到下方；左右夹在视口内 */
+function cmtPlacePop() {
+  if (!cmtPopBtn || cmtPop.hidden) return;
+  var r  = cmtPopBtn.getBoundingClientRect();
+  var pw = cmtPop.offsetWidth  || 252;
+  var ph = cmtPop.offsetHeight || 190;
+  var left = Math.min(Math.max(8, r.left), Math.max(8, window.innerWidth - pw - 8));
+  var top  = r.top - ph - 8;
+  if (top < 8) top = Math.min(r.bottom + 8, window.innerHeight - ph - 8);
+  cmtPop.style.left = Math.round(left) + 'px';
+  cmtPop.style.top  = Math.round(Math.max(8, top)) + 'px';
+}
+function cmtOpenPop(btn) {
+  cmtPopBtn = btn;
+  cmtPopInp = btn.closest('.comment-form').querySelector('.comment-input');
+  cmtPop.hidden = false;
+  cmtPlacePop();
+}
+function cmtClosePop() {
+  if (!cmtPop) return;
+  cmtPop.hidden = true;
+  cmtPopBtn = null;
+  cmtPopInp = null;
+}
+
+/* 点表情：插到光标处（而不是简单追加），保留焦点继续输入 */
+/* 渲染面板：6 类共 240 个表情，默认停在「笑脸」 */
+EMOJI.render(cmtPop, { def: '笑脸' });
+cmtPop.addEventListener('click', function (e) {
+  var cell = e.target.closest('.emoji-cell');
+  if (!cell || !cmtPopInp) return;
+  var em  = cell.textContent;
+  var inp = cmtPopInp;
+  if (inp.value.length + em.length > 200) return;   /* 程序赋值绕过 maxlength，自己挡一道 */
+  var s = inp.selectionStart, t = inp.selectionEnd;
+  if (s == null || t == null) { s = t = inp.value.length; }
+  inp.value = inp.value.slice(0, s) + em + inp.value.slice(t);
+  var pos = s + em.length;
+  inp.focus();
+  try { inp.setSelectionRange(pos, pos); } catch (err) {}
+});
+/* 页面滚动 / 缩放时跟着按钮走 */
+window.addEventListener('scroll', function () { if (!cmtPop.hidden) cmtPlacePop(); }, true);
+window.addEventListener('resize', function () { if (!cmtPop.hidden) cmtPlacePop(); });
+/* 点别处 / Esc 关闭 */
+document.addEventListener('click', function (e) {
+  if (cmtPop.hidden) return;
+  if (cmtPop.contains(e.target)) return;
+  if (cmtPopBtn && cmtPopBtn.contains(e.target)) return;
+  cmtClosePop();
+});
+document.addEventListener('keydown', function (e) {
+  if (e.key === 'Escape' && !cmtPop.hidden) cmtClosePop();
+});
+
+feedEl.addEventListener('click', function (e) {
+  /* 表情按钮：开/关面板（同一个按钮连点两次 = 收起） */
+  var emjBtn = e.target.closest('.cmt-emoji');
+  if (emjBtn) {
+    if (cmtPopBtn === emjBtn && !cmtPop.hidden) cmtClosePop(); else cmtOpenPop(emjBtn);
+    return;
+  }
+  var foldBtn = e.target.closest('.fold-btn');
+  if (foldBtn) {
+    var fCard = foldBtn.closest('.post');
+    /* 目标状态 = 当前状态取反：折叠 → 展开，展开 → 折叠
+       用 .expanded 判断（不能看 .folded：只有图片没进卡片时正文并不裁剪高度） */
+    setFolded(fCard, fCard.classList.contains('expanded'));
+    return;
+  }
+  var likeBtn = e.target.closest('.like-btn');
+  if (likeBtn) {
+    var liked = likeBtn.classList.toggle('liked');
+    var num = likeBtn.querySelector('b');
+    num.textContent = Math.max(0, (parseInt(num.textContent, 10) || 0) + (liked ? 1 : -1));
+    if (liked && window.FX) FX.burstFrom(likeBtn, 9);
+    return;
+  }
+
+  var cBtn = e.target.closest('.comment-btn');
+  if (cBtn) {
+    var sec = cBtn.closest('.post').querySelector('.post-comments');
+    sec.hidden = !sec.hidden;
+    if (!sec.hidden) {
+      var ip = sec.querySelector('.comment-input');
+      if (ip) ip.focus();
+    }
+    return;
+  }
+
+  var send = e.target.closest('.comment-send');
+  if (send) {
+    var p = send.closest('.post');
+    addComment(p, p.querySelector('.comment-input').value);
+    return;
+  }
+
+  /* 点某条评论的「回复」：输入框进入回复状态，并记住要挂在哪个根评论下 */
+  var rBtn = e.target.closest('.cmt-reply');
+  if (rBtn) {
+    var post = rBtn.closest('.post');
+    var input = post.querySelector('.comment-input');
+    if (input) {
+      input.dataset.reply = rBtn.dataset.name;
+      input.dataset.replyToId = rBtn.dataset.root || '';
+      input.placeholder = '回复 @' + rBtn.dataset.name + '：';
+      post.querySelector('.post-comments').hidden = false;
+      input.focus();
+    }
+  }
+});
+
+/* 输入框：Esc 取消回复状态 */
+feedEl.addEventListener('keydown', function (e) {
+  if (e.target.classList && e.target.classList.contains('comment-input')) {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      addComment(e.target.closest('.post'), e.target.value);
+    } else if (e.key === 'Escape' && e.target.dataset.reply) {
+      delete e.target.dataset.reply;
+      delete e.target.dataset.replyToId;
+      e.target.placeholder = '写评论，回车发送…';
+    }
+  }
+});
+
+/* ---------- 日历 ---------- */
+(function () {
+  var el = document.getElementById('cal');
+  if (!el) return;
+
+  var now = new Date(), y = now.getFullYear(), m = now.getMonth();
+  document.getElementById('cal-title').textContent = (m + 1) + ' 月';
+  document.getElementById('cal-year').textContent = String(y);
+
+  var start = (new Date(y, m, 1).getDay() + 6) % 7;      /* 周一开头 */
+  var days  = new Date(y, m + 1, 0).getDate();
+
+  /* 有记录的日子：本月发布的帖子 + 演示数据 */
+  var marks = { 3: 1, 7: 1, 8: 1, 9: 1, 14: 1, 15: 1, 17: 1, 21: 1, 22: 1, 24: 1 };
+  loadUserPosts().forEach(function (p) {
+    var d = new Date(p.ts);
+    if (d.getFullYear() === y && d.getMonth() === m) marks[d.getDate()] = 1;
+  });
+  var markCount = Object.keys(marks).length;
+  var cEl = document.getElementById('cal-count');
+  if (cEl) cEl.textContent = markCount;
+
+  var html = '';
+  ['一', '二', '三', '四', '五', '六', '日'].forEach(function (w) {
+    html += '<span class="cal-wd">' + w + '</span>';
+  });
+  for (var i = 0; i < start; i++) html += '<span class="cal-day"></span>';
+  for (var d = 1; d <= days; d++) {
+    var cls = 'cal-day';
+    if (d === now.getDate()) cls += ' today';
+    if (marks[d]) cls += ' has-dot';
+    html += '<span class="' + cls + '">' + d +
+            (marks[d] ? '<i></i>' : '') + '</span>';
+  }
+  el.innerHTML = html;
+})();
+
+/* ---------- 每日一句 ---------- */
+(function () {
+  var QUOTES = [
+    ['种一棵树最好的时间是十年前，其次是现在。', '谚语'],
+    ['我走得很慢，但我从不后退。', '林肯'],
+    ['星光不问赶路人，时光不负有心人。', '大冰'],
+    ['每一个不曾起舞的日子，都是对生命的辜负。', '尼采'],
+    ['不要等待机会，而要创造机会。', '培根'],
+    ['所谓努力，就是把不可能变成可能的过程。', '学迹']
+  ];
+  var idx = new Date().getDate() % QUOTES.length;   /* 每天固定一句 */
+  var tEl = document.getElementById('quote-text');
+  var aEl = document.getElementById('quote-author');
+  var nEl = document.getElementById('quote-next');
+  if (!tEl) return;
+
+  function show() {
+    tEl.textContent = QUOTES[idx][0];
+    aEl.textContent = '—— ' + QUOTES[idx][1];
+  }
+  if (nEl) nEl.addEventListener('click', function () {
+    idx = (idx + 1) % QUOTES.length;
+    show();
+  });
+  show();
+})();
+
+/* ---------- 头像回填 ---------- */
+(function () {
+  try {
+    var s = JSON.parse(localStorage.getItem('xj-session') || 'null');
+    var a = document.getElementById('ce-avatar');
+    if (s && a) a.textContent = s.initial || '学';
+  } catch (e) {}
+})();
+
+renderFeed();
+
+/* ?emojitest：无头验证 —— 展开第一条评论 → 点表情按钮 → 在光标处插两个表情，
+   结果（面板格子数 / 是否展开 / 输入框值 / 光标位置 / 正文里放大 emoji 数）写进 body */
+if (/emojitest/.test(location.search)) {
+  var _post = document.querySelector('.post');
+  var _sec  = _post && _post.querySelector('.post-comments');
+  try {
+  if (_sec) {
+    _sec.hidden = false;
+    var _inp = _sec.querySelector('.comment-input');
+    _sec.querySelector('.cmt-emoji').click();               /* 开面板 */
+    var _open = !cmtPop.hidden;
+    var _cells = cmtPop.querySelectorAll('.emoji-cell');
+    var _tabs  = cmtPop.querySelectorAll('.emoji-tab');
+    var _c0    = _cells.length;
+    /* 切到「学习」分类，验证网格确实换了内容 */
+    cmtPop.querySelector('.emoji-tab[data-cat="学习"]').click();
+    var _cells2 = cmtPop.querySelectorAll('.emoji-cell');
+    var _c1 = _cells2.length;
+    var _first2 = _cells2[0].textContent;
+    var _onTab = cmtPop.querySelector('.emoji-tab.on').getAttribute('data-cat');
+    /* 切回「笑脸」再插表情（避免断言值依赖具体分类） */
+    cmtPop.querySelector('.emoji-tab[data-cat="笑脸"]').click();
+    var _act = cmtPop.querySelectorAll('.emoji-cell');
+    _inp.value = '真棒';
+    try { _inp.setSelectionRange(2, 2); } catch (e) {}       /* 光标放末尾 */
+    _act[0].click();                                         /* 笑脸类第 1 个 */
+    _act[2].click();                                         /* 笑脸类第 3 个 */
+    document.body.setAttribute('data-emoji-test',
+      'tabs=' + _tabs.length + ';cells=' + _c0 + ';total=' + EMOJI.total() +
+      ';learn=' + _c1 + '/on=' + _onTab + '/first=' + _first2 +
+      ';open=' + _open +
+      ';val=' + _inp.value + ';caret=' + _inp.selectionStart +
+      ';wrapped=' + document.querySelectorAll('.comment-text .emj').length);
+    /* 不滚动：无头下 scrollIntoView 与 sticky 顶栏配合会把截图滚花，验证用加高窗口看 */
+  }
+  } catch (err) {
+    document.body.setAttribute('data-emoji-test', 'ERR:' + (err && err.message));
+  }
+}
+</script>
+</body>
+</html>

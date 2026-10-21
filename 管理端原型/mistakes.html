@@ -1,0 +1,266 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="light">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#F5F6F8">
+<title>错题本 · 学迹管理端</title>
+<link rel="stylesheet" href="style.css?v=20261021c">
+</head>
+<body data-page="mistakes" data-title="错题本" data-sub="答错自动收进来、答对自动订正 · 家长在这里看和批注">
+
+<div class="app">
+  <aside class="sb" id="sb"></aside>
+  <div class="main">
+    <header class="tb" id="tb"></header>
+    <div class="content">
+
+      <section class="sec">
+        <div class="grid g-4" id="stats"></div>
+      </section>
+
+      <section class="sec">
+        <div class="sec-title">
+          <span>错题清单</span><span class="count" id="cnt"></span>
+          <span class="right">
+            <div class="seg" id="f-scope">
+              <button class="on" data-val="cur">当前学生</button>
+              <button data-val="all">全部学生</button>
+            </div>
+            <div class="seg" id="f-st" style="margin-left:8px">
+              <button class="on" data-val="open">待订正</button>
+              <button data-val="corrected">已订正</button>
+              <button data-val="all">全部</button>
+            </div>
+            <div class="seg" id="f-subj" style="margin-left:8px">
+              <button class="on" data-val="all">全部科目</button>
+            </div>
+          </span>
+        </div>
+        <div id="list"></div>
+      </section>
+
+      <p class="hint">
+        错题是<b>自动收的</b>：学生在用户端答错一道就进这里，同题再错只累计次数；订正答对就自动标记为「已订正」。
+        你在这里能加一条<b>批注</b>（孩子端错题本里能看到），也可以在孩子确认订正后手动标记 ——
+        但<b>不能替孩子造错题或改答案</b>，否则学情就假了。复习节奏走艾宾浩斯（1/2/4/7/15/30 天），
+        到期的错题会自动出现在孩子的「每日任务 · 错题复习」里。
+      </p>
+
+    </div>
+  </div>
+</div>
+
+<script src="demo.js?v=20261021c"></script>
+<script src="admin.js?v=20261021c"></script>
+<script>
+(function () {
+  var E = ADMIN.esc, I = ADMIN.icon;
+  var students = DB.get('students', []);
+  var scope = 'cur', fSt = 'open', fSubj = 'all';
+
+  function stu(id) {
+    return students.filter(function (s) { return s.id === id; })[0] ||
+           { name: '?', initial: '?', color: 'c1' };
+  }
+  function sid() { return scope === 'cur' ? (ADMIN.currentId() || null) : null; }
+  function plain(h) { return String(h || '').replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim(); }
+  function qOf(id) {
+    return DB.get('qbank', []).filter(function (q) { return q.id === id; })[0] || null;
+  }
+  function dueTxt(ts) {
+    if (!ts) return '—';
+    var d = new Date(ts); d.setHours(0, 0, 0, 0);
+    var t0 = new Date(); t0.setHours(0, 0, 0, 0);
+    var n = Math.round((d - t0) / 864e5);
+    if (n < 0) return '已误期 ' + (-n) + ' 天';
+    if (n === 0) return '今天';
+    return n + ' 天后';
+  }
+
+  /* 科目筛选段（按当前数据动态生成） */
+  function renderSubjSeg() {
+    var all = DB.mistakesOf(sid());
+    var subj = {};
+    all.forEach(function (m) { subj[m.subject] = (subj[m.subject] || 0) + 1; });
+    var keys = Object.keys(subj).sort(function (a, b) { return subj[b] - subj[a]; });
+    if (fSubj !== 'all' && keys.indexOf(fSubj) < 0) fSubj = 'all';
+    document.getElementById('f-subj').innerHTML =
+      '<button class="' + (fSubj === 'all' ? 'on' : '') + '" data-val="all">全部科目</button>' +
+      keys.map(function (k) {
+        return '<button class="' + (fSubj === k ? 'on' : '') + '" data-val="' + E(k) + '">' + E(k) + ' ' + subj[k] + '</button>';
+      }).join('');
+    ADMIN.seg('#f-subj', function (v) { fSubj = v; render(); });
+  }
+
+  function render() {
+    var all = DB.mistakesOf(sid());
+    var rows = all.filter(function (m) {
+      if (fSt !== 'all' && m.status !== fSt) return false;
+      if (fSubj !== 'all' && m.subject !== fSubj) return false;
+      return true;
+    });
+    var st = DB.mkStat(sid());
+    var worst = all.slice().sort(function (a, b) { return b.wrong - a.wrong; })[0];
+    var due = all.filter(function (m) {
+      return m.status === 'open' && m.nextAt && m.nextAt <= Date.now() + 864e5;
+    }).length;
+
+    document.getElementById('stats').innerHTML = [
+      ['alert', st.open ? 'warn' : 'ok', '待订正', st.open + '<small>道</small>',
+        due ? '其中 ' + due + ' 道已到复习节点' : '暂时没有到期的'],
+      ['check2', 'ok', '已订正', st.fixed + '<small>道</small>',
+        st.total ? '订正率 ' + Math.round(st.fixed * 100 / st.total) + '%' : '还没有错题'],
+      ['refresh', '', '错得最多',
+        (worst ? worst.wrong : 0) + '<small>遍</small>',
+        worst ? worst.kp : '—'],
+      ['layers', '', '涉及科目', Object.keys(st.subjects).length + '<small>科</small>',
+        Object.keys(st.subjects).map(function (k) { return k + ' ' + st.subjects[k]; }).join(' · ') || '—']
+    ].map(function (x) {
+      return '<div class="stat"><div class="stat-top"><span class="ico ' + x[1] + '">' + I(x[0]) + '</span>' + x[2] + '</div>' +
+        '<div class="stat-num">' + x[3] + '</div><div class="stat-sub">' + E(x[4]) + '</div></div>';
+    }).join('');
+
+    document.getElementById('cnt').textContent = '· ' + rows.length + ' 道' +
+      (scope === 'all' ? '（全部学生）' : '（' + stu(ADMIN.currentId()).name + '）');
+
+    document.getElementById('list').innerHTML = rows.length
+      ? '<div class="card" style="padding:0"><table class="tbl"><thead><tr>' +
+        '<th>知识点 / 题干</th>' + (scope === 'all' ? '<th style="width:74px">学生</th>' : '') +
+        '<th style="width:56px">科目</th><th style="width:64px">错过</th>' +
+        '<th style="width:120px">首次 / 最近</th><th style="width:96px">下次复习</th>' +
+        '<th style="width:80px">状态</th></tr></thead><tbody>' + rows.map(function (m) {
+          var q = qOf(m.qid);
+          var stem = plain(q ? q.stem : '(题目已不在题库)');
+          return '<tr data-k="' + E(m.sid) + '|' + E(m.qid) + '" style="cursor:pointer">' +
+            '<td><div style="font-size:12.5px;font-weight:600">' + E(m.kp) +
+              (m.note ? ' <span class="chip warn">' + I('edit') + '已批注</span>' : '') + '</div>' +
+              '<div class="t-sub" style="max-width:420px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' +
+              E(stem) + '</div></td>' +
+            (scope === 'all' ? '<td><div style="display:flex;align-items:center;gap:6px">' + ADMIN.avatar(stu(m.sid), 'sm') +
+              '<span style="font-size:12.5px">' + E(stu(m.sid).name) + '</span></div></td>' : '') +
+            '<td><span class="chip brand">' + E(m.subject) + '</span></td>' +
+            '<td><b>' + m.wrong + '</b> <span class="muted" style="font-size:12px">遍</span></td>' +
+            '<td><div style="font-size:12px">' + ADMIN.ago(m.firstAt) + '</div>' +
+              '<div class="t-sub">最近 ' + ADMIN.ago(m.lastAt) + '</div></td>' +
+            '<td style="font-size:12.5px">' + (m.status === 'open' ? dueTxt(m.nextAt) : '—') + '</td>' +
+            '<td><span class="chip ' + (m.status === 'open' ? 'warn' : 'ok') + '">' +
+              (m.status === 'open' ? '待订正' : '已订正') + '</span></td>' +
+          '</tr>';
+        }).join('') + '</tbody></table></div>'
+      : '<div class="card"><div class="empty"><div class="ico">' + I('check2') + '</div>' +
+        '<div class="empty-title">' + (fSt === 'open' ? '没有待订正的错题' : '没有匹配的错题') + '</div>' +
+        '<div class="empty-sub">' + (fSt === 'open' ? '孩子答错的题会自动出现在这里' : '换一下筛选条件') + '</div></div></div>';
+  }
+
+  /* ---------- 错题详情：题目 + 历次作答 + 批注 ---------- */
+  function openMk(m) {
+    var q = qOf(m.qid);
+    var person = stu(m.sid);
+    var history = DB.subsOf(m.sid).filter(function (s) { return s.qid === m.qid; });
+
+    /* 改完写回：DB.get 每次解析回来的是新对象，所以要按 sid+qid 重新定位再写 */
+    function apply(fn) {
+      var list = DB.get('mistakes', []);
+      var t = list.filter(function (x) { return x.sid === m.sid && x.qid === m.qid; })[0];
+      if (!t) return;
+      fn(t);
+      DB.set('mistakes', list);
+      render();
+    }
+
+    var histHTML = history.length
+      ? '<div class="flabel" style="margin-top:16px">历次作答（' + history.length + ' 次）</div>' +
+        history.map(function (s) {
+          return '<div class="card tight" style="margin-bottom:6px">' +
+            '<div style="display:flex;align-items:center;gap:8px">' +
+              '<span class="chip ' + (s.ok ? 'ok' : 'danger') + '">' + (s.ok ? '对' : '错') + '</span>' +
+              '<span style="flex:1;font-size:13px">' + E(String(s.ans == null ? '未作答' : s.ans)) + '</span>' +
+              '<span class="row-meta">' + s.score + '/' + s.full + ' 分 · ' + ADMIN.ago(s.at) + '</span>' +
+            '</div></div>';
+        }).join('') +
+        '<p class="hint" style="margin-top:6px">「最近一次答对」即视为订正 —— 现在状态是' +
+        (m.status === 'open' ? '<b>待订正</b>' : '<b>已订正</b>') + '。</p>'
+      : '<p class="hint" style="margin-top:16px">这道题还没有作答记录（可能是手动收藏的）。</p>';
+
+    ADMIN.drawer({
+      title: '错题详情 · ' + m.qid,
+      body:
+        '<div style="display:flex;align-items:center;gap:11px;margin-bottom:12px">' + ADMIN.avatar(person) +
+          '<div style="flex:1;min-width:0">' +
+            '<div style="font-size:14px;font-weight:600">' + E(person.name) + ' · ' + E(m.subject) + '</div>' +
+            '<div class="row-meta">' + E(m.kp) + '</div>' +
+          '</div>' +
+          '<span class="chip ' + (m.status === 'open' ? 'warn' : 'ok') + '">' +
+            (m.status === 'open' ? '待订正' : '已订正') + '</span>' +
+        '</div>' +
+        '<div class="chipline" style="margin-bottom:12px">' +
+          '<span class="pill">错过 <b>' + m.wrong + '</b> 遍</span>' +
+          '<span class="pill">首次 ' + ADMIN.ago(m.firstAt) + '</span>' +
+          '<span class="pill">最近 ' + ADMIN.ago(m.lastAt) + '</span>' +
+          (m.status === 'open' ? '<span class="pill">下次复习 <b>' + dueTxt(m.nextAt) + '</b></span>' : '') +
+        '</div>' +
+        '<div class="flabel">题干</div>' +
+        '<div class="q-prev" style="line-height:1.9">' +
+          (q ? q.stem : '<span class="muted">（题目已从题库移除）</span>') + '</div>' +
+        (q && q.answer ? '<div class="kv" style="margin-top:14px">' +
+          '<div class="kv-row"><div class="kv-k">正确答案</div><div class="kv-v">' + E(q.answer) + '</div></div>' +
+          '</div>' : '') +
+        (q && q.expl ? '<div class="flabel" style="margin-top:14px">解析</div>' +
+          '<div class="q-prev" style="line-height:1.9">' + q.expl + '</div>' : '') +
+        histHTML +
+        '<div class="flabel" style="margin-top:16px">给孩子的批注</div>' +
+        '<textarea class="inp" id="mk-note" rows="3" placeholder="写在孩子错题本里的一句话，例如：把时间轴画一遍"' +
+          ' style="width:100%;resize:vertical">' + E(m.note || '') + '</textarea>' +
+        '<p class="hint" style="margin-top:6px">批注会出现在孩子端这道错题的卡片上。留空即删除批注。</p>',
+      foot:
+        '<button class="btn" data-x="save">' + I('check2') + '保存批注</button>' +
+        (m.status === 'open'
+          ? '<button class="btn btn-ok" data-x="fix">标记已订正</button>'
+          : '<button class="btn btn-ghost" data-x="unfix">撤销订正</button>') +
+        '<button class="btn" data-x="no">关闭</button>',
+      onMount: function (d) {
+        d.querySelector('[data-x="no"]').addEventListener('click', ADMIN.closeDrawer);
+        d.querySelector('[data-x="save"]').addEventListener('click', function () {
+          var v = d.querySelector('#mk-note').value.trim();
+          apply(function (mm) { mm.note = v; });
+          ADMIN.closeDrawer();
+          ADMIN.toast(v ? '批注已保存，孩子端可见' : '批注已清空');
+        });
+        var fx = d.querySelector('[data-x="fix"]');
+        if (fx) fx.addEventListener('click', function () {
+          ADMIN.confirm({
+            title: '标记这道题已订正？', ok: '标记已订正',
+            text: '「' + m.kp + '」会从孩子的待订正列表里移走。一般是孩子自己订正后系统自动标记，这里只作手动兜底。',
+            onOk: function () {
+              apply(function (mm) { mm.status = 'corrected'; mm.fixedAt = Date.now(); });
+              ADMIN.closeDrawer(); ADMIN.toast('已标记为已订正');
+            }
+          });
+        });
+        var uf = d.querySelector('[data-x="unfix"]');
+        if (uf) uf.addEventListener('click', function () {
+          apply(function (mm) { mm.status = 'open'; mm.fixedAt = null; });
+          ADMIN.closeDrawer(); ADMIN.toast('已撤销订正，回到待订正');
+        });
+      }
+    });
+  }
+
+  document.getElementById('list').addEventListener('click', function (e) {
+    var tr = e.target.closest('tr[data-k]');
+    if (!tr) return;
+    var k = tr.getAttribute('data-k').split('|');
+    var m = DB.mistakesOf(null).filter(function (x) { return x.sid === k[0] && x.qid === k[1]; })[0];
+    if (!m) return;
+    openMk(m);
+  });
+
+  ADMIN.seg('#f-scope', function (v) { scope = v; fSubj = 'all'; renderSubjSeg(); render(); });
+  ADMIN.seg('#f-st',    function (v) { fSt = v; render(); });
+  renderSubjSeg();
+  render();
+})();
+</script>
+</body>
+</html>
