@@ -1,0 +1,152 @@
+/* ============================================================
+   Vue 层补充样式
+   ------------------------------------------------------------
+   原则：global.css（= 旧原型 style.css）是视觉唯一真源，
+   这里只放「SPA 化」才需要的东西，绝不覆盖既有组件样式。
+   ============================================================ */
+
+#app {
+  min-height: 100%;
+}
+
+/* 路由切换：内容区轻微淡入，避免整页闪一下。
+   只作用于 .content 的直接子节点，不碰 .reveal / .topbar 的既有动效。
+   ------------------------------------------------------------
+   填模式必须是 backwards 而不是 both：
+   both 会在动画结束后把 to 帧的 transform 永久留在元素上（计算值
+   matrix(1,0,0,1,0,0)），元素因此成为 position:fixed 的包含块 ——
+   页面里所有没 teleport 的固定定位元素（表情面板、图片预览、气泡条、
+   Toast…）都会相对它定位，滚动后跑到屏幕外。backwards 结束后回落到
+   基础样式（transform: none），fixed 恢复正常。 */
+.content > * {
+  animation: vue-route-in .26s cubic-bezier(.2, .7, .3, 1) backwards;
+}
+@keyframes vue-route-in {
+  from { opacity: 0; transform: translateY(4px); }
+  to   { opacity: 1; transform: none; }
+}
+
+/* 系统开了「减少动效」就关掉，与 fx.js 的 reduced 策略保持一致 */
+@media (prefers-reduced-motion: reduce) {
+  .content > * { animation: none; }
+}
+
+/* 顶栏里用 RouterLink 取代 <a>：去掉下划线默认样式差异 */
+.topbar-brand,
+.topnav a {
+  text-decoration: none;
+}
+
+/* 头像菜单里改成 button 后需要清掉浏览器默认按钮样式 */
+.avatar-menu-item {
+  width: 100%;
+  background: none;
+  border: 0;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+/* 锁页里的出口从 <a> 变成 <button>，保持原按钮观感 */
+.lock-btn {
+  border: 0;
+  font: inherit;
+  cursor: pointer;
+}
+
+/* 访客条里的「去登录」同样是 button */
+.guest-bar .gb-login {
+  border: 0;
+  font: inherit;
+  cursor: pointer;
+}
+
+/* 九宫格坏图占位：src 加载失败（数据损坏 / blob 失效）不再静默空白 */
+.post-imgs .ph-broken {
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  aspect-ratio: 1 / 1;
+  border: 1px dashed var(--border);
+  border-radius: 8px;
+  background: var(--surface-2);
+  color: var(--text-3);
+  font-size: 12px;
+}
+
+/* 我的记录：连续标点/无空格长串（如「,,,,,」「12333…」）默认不可断行，
+   会把 grid 列撑穿屏幕 —— 允许在任意字符处断行兜底 */
+.mp-list2 > *, .mp-card { min-width: 0; }
+.mp-snip, .mp-card .post-title-line, .tun-msnip { overflow-wrap: anywhere; }
+
+/* 我的记录：卡片行内操作（编辑 / 删除） */
+.mp-acts { margin-left: auto; display: flex; gap: 6px; }
+.mp-act {
+  display: inline-flex; align-items: center; gap: 4px;
+  height: 24px; padding: 0 9px; border-radius: 99px; cursor: pointer;
+  border: 1px solid var(--border); background: var(--surface-2);
+  color: var(--text-3); font-size: 12px; font-family: inherit;
+  transition: color .15s, border-color .15s;
+}
+.mp-act:hover { color: var(--text); border-color: var(--border-2); }
+.mp-act.danger:hover { color: var(--danger); border-color: var(--danger); }
+
+/* 删除确认弹层：红色主按钮（复用 vis-card 外壳） */
+.vis-del {
+  width: 100%; margin-top: 12px; padding: 10px; border-radius: 12px;
+  background: var(--danger); border: 1px solid transparent; color: #fff;
+  font-family: inherit; font-size: 13.5px; cursor: pointer;
+  transition: filter .15s;
+}
+.vis-del:hover { filter: brightness(1.08); }
+.vis-del + .vis-cancel { margin-top: 8px; }
+
+/* 评论 / 回复折叠展开：统一小圆 pill + 旋转箭头，展开时箭头转 180° */
+.cmt-more {
+  display: inline-flex; align-items: center; gap: 4px;
+  margin: 6px 0 4px; padding: 3px 10px;
+  border: 1px solid var(--border); border-radius: 99px;
+  background: var(--surface-2);
+  color: var(--text-3); font-size: 11.5px; line-height: 1.2;
+  font-family: inherit; cursor: pointer;
+  transition: color .15s, border-color .15s;
+}
+.cmt-more:hover {
+  color: var(--brand-text); border-color: var(--brand-text);
+  text-decoration: none;
+}
+.cmt-more.sub { margin: 4px 0 8px; }
+.cmt-more svg { width: 12px; height: 12px; transition: transform .2s; }
+.cmt-more.open svg { transform: rotate(180deg); }
+
+/* ============ 每篇一问：T1 选择 / T2 填空（T3 简答沿用 global.css） ============ */
+.ask-opts { display: flex; flex-direction: column; gap: 8px; margin-top: 4px; }
+.ask-opt {
+  display: flex; align-items: flex-start; gap: 9px; text-align: left;
+  padding: 9px 12px; border: 1px solid var(--border); border-radius: 10px;
+  background: var(--surface); color: var(--text);
+  font-family: inherit; font-size: 13.5px; line-height: 1.5; cursor: pointer;
+  transition: border-color .15s, background .15s;
+}
+.ask-opt b { flex: 0 0 auto; font-weight: 600; color: var(--text-3); }
+.ask-opt:hover:not(:disabled) { border-color: var(--brand); }
+.ask-opt.picked { border-color: var(--brand); background: var(--brand-soft); }
+.ask-opt.picked b { color: var(--brand-text); }
+.ask-opt:disabled { cursor: default; opacity: .72; }
+.ask-opt.right { border-color: var(--ok); background: var(--ok-soft); opacity: 1; }
+.ask-opt.right b { color: var(--ok); }
+.ask-opt.wrong { border-color: var(--danger); background: var(--danger-soft); opacity: 1; }
+.ask-opt.wrong b { color: var(--danger); }
+.ask-q-t2 { line-height: 2.3; }
+.ask-blank {
+  display: inline-block; width: 96px; margin: 0 4px; padding: 2px 8px;
+  border: none; border-bottom: 1.5px solid var(--border-2); background: transparent;
+  font: inherit; text-align: center; color: var(--text); outline: none;
+  transition: border-color .15s;
+}
+.ask-blank:focus { border-bottom-color: var(--brand); }
+.ask-blank:disabled { opacity: .85; }
+.ask-blank.ok { border-bottom-color: var(--ok); color: var(--ok); }
+.ask-blank.bad { border-bottom-color: var(--danger); color: var(--danger); text-decoration: line-through; }
