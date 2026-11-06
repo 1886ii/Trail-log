@@ -1,0 +1,15 @@
+spring:
+  application:
+    name: Trai
+server:
+  servlet:
+    session:
+      timeout: 30d
+      cookie:
+        name: XJ_SID
+        http-only: true
+        same-site: lax
+        secure: false          # 本地调试用 profile 覆盖成 false
+        path: /
+        max-age: 30d          # 不写 = 关浏览器掉线，孩子会烦
+  port: 9797
