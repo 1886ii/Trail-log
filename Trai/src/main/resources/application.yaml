@@ -1,6 +1,17 @@
 spring:
   application:
     name: Trai
+  datasource:
+    url: jdbc:mysql://127.0.0.1:3306/trai?characterEncoding=utf8
+    username: root
+    password: g515h1111
+    driver-class-name: com.mysql.cj.jdbc.Driver
+mybatis:
+  mapper-locations: classpath:mybatis/*Mapper.xml
+  # Mybatis
+  configuration:
+    log-impl: org.apache.ibatis.logging.stdout.StdOutImpl
+    mapUnderscoreToCamelCase: true
 server:
   servlet:
     session:
@@ -13,3 +24,7 @@ server:
         path: /
         max-age: 30d          # 不写 = 关浏览器掉线，孩子会烦
   port: 9797
+trai:
+  media:
+    save_photo_path: D:/work/items/Trai/Trai/file/
+    save_photo_size: 5242880

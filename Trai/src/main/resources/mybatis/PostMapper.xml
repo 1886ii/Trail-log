@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="org.example.trai.mapper.PostMapper">
+
+    <insert id="insertOne">
+        insert into post(user_id, post_tag_id, content_delta, title, plain_text, word_count, cover, visibility)
+                    value(#{userId}, #{postTagId}, #{contentDelta}, #{title}, #{plainText}, #{wordCount}, #{cover}, #{visibility})
+    </insert>
+
+    <update id="updateAddLikeCount">
+        update post set like_count = like_count + 1 where id=#{id}
+    </update>
+
+    <update id="updateSubtractLikeCount">
+        update post set like_count = like_count - 1 where id=#{id}
+    </update>
+
+    <update id="updateAddCommentCount">
+        update post set comment_count = comment_count + 1 where id=#{id}
+    </update>
+
+    <update id="updateSubtractCommentCount">
+        update post set comment_count = comment_count - 1 where id=#{id}
+    </update>
+
+    <select id="queryByPageSize" resultType="org.example.trai.entity.PO.PostPO">
+        select id, user_id, post_tag_id, content_delta, title, plain_text, word_count, cover, like_count, comment_count, create_time, update_time
+        from post
+        where state = 0 and (visibility = 0 <if test="userId != null"> or user_id = #{userId}</if>)
+        <if test="dto.postTagId != null">
+            and post_tag_id = #{dto.postTagId}
+        </if>
+        <if test="dto.lastPostId != null">
+            and id &lt; #{dto.lastPostId}
+        </if>
+        order by id desc
+        limit #{dto.size}
+    </select>
+</mapper>

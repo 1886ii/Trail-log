@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="org.example.trai.mapper.CommentsMapper">
+
+
+    <insert id="insert" useGeneratedKeys="true" keyProperty="id">
+        insert into comments(user_id, post_id, root_id, reply_id, reply_user_id, content)
+                    value (#{userId},#{postId},#{rootId}, #{replyId}, #{replyUserId}, #{content})
+    </insert>
+
+    <update id="updateReplyCountById">
+        update comments set reply_count = reply_count + 1 where id=#{rootId}
+    </update>
+
+    <select id="queryByPostId" resultType="org.example.trai.entity.PO.CommentsPO">
+        select id, user_id, root_id, reply_id, reply_user_id, content, reply_count, create_time from comments where post_id=#{postId} and state=0 order by create_time asc, id asc
+    </select>
+</mapper>

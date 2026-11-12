@@ -1,0 +1,59 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="org.example.trai.mapper.UserMapper">
+    <insert id="insert">
+        insert into user(nickname,account,password,gender,grade,real_name,version,subject_goal,day_count,school,class_name,user_access,admin_id)
+            value(#{nickname},#{account},#{password},#{gender},#{grade},#{realName},#{version},#{subjectGoal},#{dayCount},#{school},#{className},#{userAccess},#{adminId})
+    </insert>
+
+    <update id="updateState">
+        update user set state=1 where id=#{id}
+    </update>
+
+
+
+    <select id="queryByAccount" resultType="org.example.trai.entity.PO.UserPO">
+        select id,password,nickname,user_access,avatar,grade,state from user where state!=2 and account=#{account}
+    </select>
+
+    <select id="queryMe" resultType="org.example.trai.entity.PO.UserPO">
+        select account,nickname,signature,real_name,gender,grade,version,subject_goal,day_count,school,class_name,avatar,state from user where id=#{id}
+    </select>
+
+    <select id="queryByIdList" resultType="org.example.trai.entity.BO.UserInfo4PostBO">
+        select id, avatar, nickname from user
+        <where>
+            <if test="ids != null and ids.size() > 0">
+                id in
+                <foreach collection="ids" item="id" open="(" separator="," close=")">
+                    #{id}
+                </foreach>
+            </if>
+            <!-- ids为空的时候，加一个永远不成立条件，让SQL合法，查不到数据 -->
+            <if test="ids == null or ids.size() == 0">
+                1 = 2
+            </if>
+        </where>
+    </select>
+
+    <!-- 学生端修改资料：只更新前端传了的字段；id 从会话取，账号/权限/头像/密码都不在这里动 -->
+    <update id="updateInfo">
+        update user
+        <set>
+            <if test="nickname != null and nickname != ''">nickname  = #{nickname},</if>
+            <if test="realName != null and realName !=''">real_name   = #{realName},</if>
+            <if test="gender != null">gender      = #{gender},</if>
+            <if test="signature != null ">signature  = #{signature},</if>
+            <if test="grade != null">grade       = #{grade},</if>
+            <if test="version != null">version     = #{version},</if>
+            <if test="avatar != null and avatar != ''">avatar     = #{avatar},</if>
+            <if test="dayCount != null">day_count   = #{dayCount},</if>
+            <if test="school != null and school != ''">school      = #{school},</if>
+            <if test="className != null and className != ''">class_name  = #{className},</if>
+            <if test="subjectGoal != null and subjectGoal != ''">subject_goal = #{subjectGoal},</if>
+        </set>
+        where id = #{id} and state != 2
+    </update>
+
+
+</mapper>
