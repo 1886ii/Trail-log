@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="org.example.trai.mapper.UserCurrentReadMapper">
+
+    <insert id="activateByBook">
+        insert into user_current_read(user_id, book_id, chapter_id, sort_id, state)
+        values (#{userId}, #{bookId}, 0, 0, 0)
+        on duplicate key update state = 0
+    </insert>
+
+    <update id="retireById">
+        update user_current_read set state = 1 where id = #{id} and state = 0
+    </update>
+
+    <update id="resetPointerByChapterId">
+        update user_current_read
+        set chapter_id = #{chapterId},
+            sort_id = #{sortId}
+        where chapter_id = #{deletedChapterId}
+    </update>
+
+
+    <update id="updateSortIdAndChapterId">
+        update user_current_read
+        set chapter_id = #{chapterId},
+            sort_id = #{sortId},
+            last_read_time = now()
+        where state = 0
+          and user_id = #{userId}
+          and book_id = #{bookId}
+          and sort_id &lt; #{sortId}
+    </update>
+
+    <update id="updateState42ByBookId">
+        update user_current_read set state=2 where book_id=#{bookId}
+    </update>
+
+
+    <select id="queryByUserId" resultType="org.example.trai.entity.PO.UserCurrentReadPO">
+        select id, book_id, chapter_id, sort_id, last_read_time from user_current_read where user_id=#{userId} and state=0  order by last_read_time desc, id desc limit 1
+    </select>
+
+</mapper>

@@ -1,0 +1,71 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="org.example.trai.mapper.ChapterMapper">
+
+    <insert id="insertOneChapter">
+        insert into chapter(sort_id, book_id, title, description, content, chapter_problem_id)
+                value (#{sortId},#{bookId},#{title},#{description},#{content},#{chapterProblemId})
+    </insert>
+
+    <update id="updateState">
+        update chapter set state=1 where id=#{chapterId} and book_id=#{bookId}
+    </update>
+
+    <select id="queryPrevChapter" resultType="org.example.trai.entity.PO.ChapterPO">
+        select id, sort_id
+        from chapter
+        where book_id = #{bookId}
+          and state = 0
+          and sort_id &lt; #{sortId}
+        order by sort_id desc
+        limit 1
+    </select>
+
+
+    <update id="updateChapter">
+        update chapter
+        <set>
+            <if test="title != null and title != ''">
+                title = #{title},
+            </if>
+            <if test="description != null">
+                description = #{description},
+            </if>
+            <if test="content != null">
+                content = #{content},
+            </if>
+            <if test="chapterProblemId != null">
+                chapter_problem_id = #{chapterProblemId},
+            </if>
+        </set>
+        where id = #{id} and state = 0
+    </update>
+
+    <update id="updateStateByBookId">
+        update chapter set state=1 where book_id=#{bookId}
+    </update>
+
+    <select id="queryNextSortId" resultType="java.lang.Integer">
+        select coalesce(max(sort_id), 0) + 1 from chapter where book_id=#{bookId}
+    </select>
+
+    <select id="queryAllChapterByBookId" resultType="org.example.trai.entity.PO.ChapterPO">
+        select id, sort_id, title, description, chapter_problem_id, create_time, update_time
+        from chapter
+        where book_id = #{bookId} and state = 0
+        <if test="lastSortId != null">
+            and sort_id &gt; #{lastSortId}
+        </if>
+        order by sort_id asc
+        <if test="size != null">
+            limit #{size}
+        </if>
+    </select>
+
+
+    <select id="queryById" resultType="org.example.trai.entity.PO.ChapterPO">
+        select id,sort_id, book_id,title,description,content, chapter_problem_id from chapter where id=#{id} and state=0
+    </select>
+
+
+</mapper>

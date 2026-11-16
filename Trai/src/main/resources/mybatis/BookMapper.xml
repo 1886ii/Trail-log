@@ -1,0 +1,71 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="org.example.trai.mapper.BookMapper">
+
+    <insert id="insertOne">
+        insert into book(book_name, cover, author, book_tag_id, grade, unit_name, description)
+                    value(#{bookName},#{cover},#{author},#{bookTagId},#{grade},#{unitName},#{description})
+    </insert>
+
+    <update id="updateAddChapterCount">
+        update book set chapter_count=chapter_count+1 where id=#{bookId}
+    </update>
+
+    <update id="updateSubtractChapterCount">
+        update book set chapter_count=chapter_count-1 where id=#{bookId} and chapter_count > 0
+    </update>
+
+    <update id="update">
+        UPDATE book
+        <set>
+            <if test="bookPO.bookName != null">
+                book_name = #{bookPO.bookName},
+            </if>
+            <if test="bookPO.cover != null">
+                cover = #{bookPO.cover},
+            </if>
+            <if test="bookPO.author != null">
+                author = #{bookPO.author},
+            </if>
+            <if test="bookPO.bookTagId != null">
+                book_tag_id = #{bookPO.bookTagId},
+            </if>
+            <if test="bookPO.grade != null">
+                grade = #{bookPO.grade},
+            </if>
+            <if test="bookPO.unitName != null">
+                unit_name = #{bookPO.unitName},
+            </if>
+            <if test="bookPO.description != null">
+                description = #{bookPO.description},
+            </if>
+        </set>
+        WHERE id = #{bookPO.id} and state=0
+    </update>
+
+    <update id="updateState">
+        update book set state=1 where id=#{id}
+    </update>
+
+    <select id="queryByPageSize" resultType="org.example.trai.entity.PO.BookPO">
+        select id,book_name,cover,author,book_tag_id,grade,unit_name,chapter_count,description,create_time,update_time,state
+        from book
+        <where>
+            state = 0
+            <!-- 标签筛选 -->
+            <if test="bookTagId != null and bookTagId > 0">
+                and book_tag_id = #{bookTagId}
+            </if>
+            <!-- 游标分页：lastBookId 不为空，查id比它大的，适合下拉滚动加载 -->
+            <if test="lastBookId != null and lastBookId > 0">
+                and id > #{lastBookId}
+            </if>
+        </where>
+        ORDER BY id ASC
+        LIMIT #{size}
+    </select>
+
+    <select id="queryByBookId" resultType="org.example.trai.entity.PO.BookPO">
+        select id, book_name, cover, author, book_tag_id, grade, unit_name, chapter_count, description from book where id=#{bookId} and state=0
+    </select>
+</mapper>

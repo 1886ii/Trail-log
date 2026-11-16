@@ -52,7 +52,6 @@ public class CommentsService {
         return true;
     }
 
-    @Transactional(rollbackFor = Exception.class)
     public List<CommentsGetVO> getCommentsByPostId(CommentsGetDTO commentsGetDTO) {
         Long userId = UserLoginInterceptor.current().getId();
         if (userId == null) return null;

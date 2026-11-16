@@ -42,7 +42,7 @@ public class LikesService {
         if (postMapper.updateSubtractLikeCount(postId) != 1)                  // 已删除，计数失败 → 必须回滚
             throw new IllegalStateException("取消点赞计数更新失败");
 
-        return false;
+        return true;
     }
 
     @Transactional(rollbackFor = Exception.class)

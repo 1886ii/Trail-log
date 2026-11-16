@@ -14,7 +14,7 @@ import java.util.List;
 
 @RestController
 @RequestMapping("/user/comments")
-public class CommentsController {
+public class UserCommentsController {
     @Resource
     private CommentsService commentsService;
 

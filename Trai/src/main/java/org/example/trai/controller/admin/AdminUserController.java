@@ -5,6 +5,7 @@ import org.example.trai.common.Return;
 import org.example.trai.enmus.Codes;
 import org.example.trai.entity.DTO.UserAddDTO;
 import org.example.trai.entity.VO.UserAddVO;
+import org.example.trai.interceptor.AdminLoginInterceptor;
 import org.example.trai.service.UserService;
 import org.springframework.util.StringUtils;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -21,7 +22,7 @@ public class AdminUserController {
 
     @PostMapping("/add")
     public Return<UserAddVO> addUser(@RequestBody UserAddDTO userAddDTO) {
-        if (userAddDTO == null) return Return.fail(null, Codes.FAIL_NORMAL);
+        if (AdminLoginInterceptor.current().getId() == null || userAddDTO == null) return Return.fail(null, Codes.FAIL_NORMAL);
         if (userAddDTO.getGrade() == null || userAddDTO.getGrade() <=0
                 || userAddDTO.getGrade() >= 30 || !StringUtils.hasLength(userAddDTO.getAccount())
                 || userAddDTO.getUserAccess() < 0 || userAddDTO.getUserAccess() >= 4) return Return.fail(null, Codes.FAIL_NORMAL);
