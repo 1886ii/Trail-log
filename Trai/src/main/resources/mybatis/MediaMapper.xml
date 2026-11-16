@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="org.example.trai.mapper.MediaMapper">
+
+    <insert id="insertOneMedia" useGeneratedKeys="true" keyProperty="id">
+        insert into media(url, bytes, owner_id, width, height)
+                    value(#{url}, #{bytes}, #{ownerId},  #{width}, #{height})
+    </insert>
+</mapper>

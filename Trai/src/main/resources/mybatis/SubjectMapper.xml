@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="org.example.trai.mapper.SubjectMapper">
+    <insert id="insert">
+        insert into subject(subject_name) value (#{subjectName})
+    </insert>
+
+    <select id="queryAll" resultType="org.example.trai.entity.PO.SubjectPO">
+        select id, subject_name from subject where state=0
+    </select>
+</mapper>

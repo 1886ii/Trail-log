@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="org.example.trai.mapper.UserChapterReadMapper">
+
+    <insert id="insertOne">
+        insert ignore into user_chapter_read(user_id, book_id, chapter_id, sort_id)
+                    values (#{userId}, #{bookId}, #{chapterId}, #{sortId});
+    </insert>
+
+    <update id="updateStateByChapterId">
+        update user_chapter_read set state=1 where chapter_id=#{chapterId}
+    </update>
+
+    <select id="queryDoneByUserIdAndBookId" resultType="java.lang.Integer">
+        select count(*) from user_chapter_read where user_id=#{userId} and book_id=#{bookId} and state=0
+    </select>
+
+    <select id="queryReadChapterIds" resultType="java.lang.Long">
+        select chapter_id
+        from user_chapter_read
+        where user_id = #{userId} and book_id = #{bookId} and state = 0
+    </select>
+
+</mapper>
